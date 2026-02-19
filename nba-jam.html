@@ -1,0 +1,1778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NBA JAM - ARCADE</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden;font-family:'Arial Black',Arial,sans-serif}
+canvas{image-rendering:pixelated;cursor:none}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<script>
+// ============================================================
+//  NBA JAM — FULL ARCADE CLONE (v2 — Big Heads Edition)
+// ============================================================
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const W=960,H=640;
+canvas.width=W;canvas.height=H;
+function resize(){const s=Math.min(window.innerWidth/W,window.innerHeight/H);canvas.style.width=(W*s)+'px';canvas.style.height=(H*s)+'px'}
+resize();window.addEventListener('resize',resize);
+
+// --- Input ---
+const keys={};
+window.addEventListener('keydown',e=>{keys[e.code]=true;e.preventDefault()});
+window.addEventListener('keyup',e=>{keys[e.code]=false});
+
+// --- Audio ---
+let audioCtx;
+function ensureAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+function playTone(freq,dur,type='square',vol=0.12){
+  ensureAudio();
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type=type;o.frequency.value=freq;
+  g.gain.setValueAtTime(vol,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
+  o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+dur);
+}
+function sfxShoot(){playTone(440,0.15,'triangle',0.18)}
+function sfxDunk(){playTone(110,0.5,'sawtooth',0.25);setTimeout(()=>playTone(70,0.4,'square',0.2),50)}
+function sfxSwish(){playTone(800,0.08,'sine',0.15);setTimeout(()=>playTone(1200,0.1,'sine',0.12),80)}
+function sfxBuzzer(){playTone(180,1,'sawtooth',0.3)}
+function sfxSteal(){playTone(300,0.1,'triangle',0.2)}
+function sfxShove(){playTone(140,0.25,'sawtooth',0.2)}
+function sfxSelect(){playTone(500,0.1,'square',0.15);setTimeout(()=>playTone(700,0.15,'square',0.15),100)}
+function sfxFire(){for(let i=0;i<5;i++)setTimeout(()=>playTone(300+i*100,0.15,'sawtooth',0.18),i*60)}
+
+// --- Per-Player Appearance Data ---
+// Each player gets a custom head contour defined by bezier control points
+// plus unique facial features for caricature recognition
+// Head contour: crownW, crownH, templeW, cheekW, jawW, chinW, chinH
+// Controls the bezier path that traces the head shape
+// PLAYER_LOOKS v3 — Bold arcade style. headW/headH control ellipse shape,
+// everything else is about BIG visible features you can read across the court.
+const PLAYER_LOOKS={
+  'M. JORDAN':{skin:'#6B4226',skinD:'#4D2E18',skinL:'#8B5A38',
+    headW:1.0,headH:0.92,earSz:1.5,eyeSz:1.0,
+    noseW:1.3,beard:'mustache',beardC:'#1A1A1A',
+    hairC:'#1A1A1A',eyeC:'#2A1800',
+    id:'jordan'}, // bald + big ears + thick stache
+  'C. CLARK':{skin:'#F2C9A3',skinD:'#D4A882',skinL:'#FFE0C4',
+    headW:0.88,headH:1.0,earSz:0.7,eyeSz:1.25,
+    noseW:0.7,beard:'none',beardC:'',
+    hairC:'#3A2210',eyeC:'#5A7A42',
+    id:'clark'}, // ponytail + big eyes + glasses
+  'L. JAMES':{skin:'#6B4226',skinD:'#4D2E18',skinL:'#8B5A38',
+    headW:1.12,headH:0.88,earSz:1.0,eyeSz:0.95,
+    noseW:1.4,beard:'full',beardC:'#1A1A1A',
+    hairC:'#1A1A1A',eyeC:'#2A1800',
+    id:'lebron'}, // headband + massive beard + wide jaw
+  'C. PARKER':{skin:'#7B5233',skinD:'#5C3A20',skinL:'#9B7050',
+    headW:0.9,headH:1.0,earSz:0.8,eyeSz:1.1,
+    noseW:0.9,beard:'none',beardC:'',
+    hairC:'#1A1A1A',eyeC:'#3A2200',
+    id:'parker'}, // braids + elegant
+  'S. CURRY':{skin:'#C49A6C',skinD:'#A07A50',skinL:'#E0BB90',
+    headW:0.95,headH:0.95,earSz:0.9,eyeSz:1.15,
+    noseW:0.85,beard:'goatee',beardC:'#1A1A1A',
+    hairC:'#1A1A1A',eyeC:'#3A2200',
+    id:'curry'}, // baby face + goatee + mouthguard
+  'S. IONESCU':{skin:'#E8C9A0',skinD:'#C9A880',skinL:'#FFF0D8',
+    headW:0.85,headH:1.02,earSz:0.7,eyeSz:1.3,
+    noseW:0.65,beard:'none',beardC:'',
+    hairC:'#2A1A08',eyeC:'#4A6A32',
+    id:'ionescu'}, // ponytail + huge eyes
+  'K. DURANT':{skin:'#5A3818',skinD:'#3D260E',skinL:'#7A5432',
+    headW:0.82,headH:1.25,earSz:0.9,eyeSz:0.9,
+    noseW:1.1,beard:'goatee',beardC:'#1A1A1A',
+    hairC:'#1A1A1A',eyeC:'#2A1800',
+    id:'durant'}, // TALL narrow head + slim goatee
+  'D. TAURASI':{skin:'#E8C098',skinD:'#C9A078',skinL:'#FFE0C0',
+    headW:0.95,headH:0.92,earSz:0.8,eyeSz:1.0,
+    noseW:0.85,beard:'none',beardC:'',
+    hairC:'#D4A040',eyeC:'#6A8A52',
+    id:'taurasi'}, // blonde ponytail + fierce brows
+  'G. ANTETOKOUNMPO':{skin:'#3D2610',skinD:'#2A1808',skinL:'#5A3C22',
+    headW:0.85,headH:1.35,earSz:1.1,eyeSz:1.0,
+    noseW:1.3,beard:'none',beardC:'',
+    hairC:'#1A1A1A',eyeC:'#2A1800',
+    id:'giannis'}, // SUPER tall head + headband
+  "A'JA WILSON":{skin:'#5A3818',skinD:'#3D260E',skinL:'#7A5432',
+    headW:0.92,headH:1.02,earSz:0.8,eyeSz:1.1,
+    noseW:1.0,beard:'none',beardC:'',
+    hairC:'#1A1A1A',eyeC:'#2A1800',
+    id:'wilson'}, // braids + strong build
+  'L. DONCIC':{skin:'#F0C8A0',skinD:'#D0A880',skinL:'#FFE8CC',
+    headW:1.1,headH:0.88,earSz:0.95,eyeSz:1.0,
+    noseW:1.0,beard:'none',beardC:'',
+    hairC:'#5A4030',eyeC:'#6A8A6A',
+    id:'doncic'}, // round chubby face + shaggy hair
+  'A. OGWUMIKE':{skin:'#5A3818',skinD:'#3D260E',skinL:'#7A5432',
+    headW:0.9,headH:1.0,earSz:0.75,eyeSz:1.15,
+    noseW:1.0,beard:'none',beardC:'',
+    hairC:'#1A1A1A',eyeC:'#2A1800',
+    id:'ogwumike'}, // braids + beads
+  'J. TATUM':{skin:'#7B5233',skinD:'#5C3A20',skinL:'#9B7050',
+    headW:1.0,headH:0.95,earSz:0.95,eyeSz:1.0,
+    noseW:1.1,beard:'goatee',beardC:'#1A1A1A',
+    hairC:'#1A1A1A',eyeC:'#2A1800',
+    id:'tatum'}, // flat-top fade + goatee
+  'B. STEWART':{skin:'#6B4226',skinD:'#4D2E18',skinL:'#8B5A38',
+    headW:0.9,headH:1.0,earSz:0.8,eyeSz:1.1,
+    noseW:1.0,beard:'none',beardC:'',
+    hairC:'#1A1A1A',eyeC:'#3A2200',
+    id:'stewart'}, // short hair + headband
+  'J. BUTLER':{skin:'#5A3818',skinD:'#3D260E',skinL:'#7A5432',
+    headW:1.0,headH:1.0,earSz:0.9,eyeSz:0.95,
+    noseW:1.2,beard:'full',beardC:'#1A1A1A',
+    hairC:'#1A1A1A',eyeC:'#2A1800',
+    id:'butler'}, // WILD emo hair + beard + headband
+  'K. PLUM':{skin:'#F5D0A8',skinD:'#D5B088',skinL:'#FFF0D0',
+    headW:0.85,headH:0.95,earSz:0.7,eyeSz:1.25,
+    noseW:0.65,beard:'none',beardC:'',
+    hairC:'#C89040',eyeC:'#5A7A42',
+    id:'plum'}, // blonde ponytail + big smile
+};
+
+// --- Teams: NBA + WNBA Mix ---
+const TEAMS=[
+  {name:'CHICAGO',abbr:'CHI',color1:'#CE1141',color2:'#000000',
+    players:[
+      {name:'M. JORDAN',spd:9,threePt:8,dunk:10,def:7,hair:'bald',num:23,ht:1.0},
+      {name:'C. CLARK',spd:9,threePt:9,dunk:5,def:6,hair:'ponytail',num:22,ht:0.85}
+    ]},
+  {name:'LOS ANGELES',abbr:'LAL',color1:'#552583',color2:'#FDB927',
+    players:[
+      {name:'L. JAMES',spd:8,threePt:7,dunk:10,def:8,hair:'headband',num:6,ht:1.05},
+      {name:'C. PARKER',spd:8,threePt:8,dunk:6,def:7,hair:'ponytail',num:3,ht:0.88}
+    ]},
+  {name:'GOLDEN STATE',abbr:'GSW',color1:'#006BB6',color2:'#FDB927',
+    players:[
+      {name:'S. CURRY',spd:9,threePt:10,dunk:5,def:5,hair:'short',num:30,ht:0.9},
+      {name:'S. IONESCU',spd:8,threePt:9,dunk:4,def:6,hair:'ponytail',num:11,ht:0.85}
+    ]},
+  {name:'PHOENIX',abbr:'PHX',color1:'#E56020',color2:'#1D1160',
+    players:[
+      {name:'K. DURANT',spd:8,threePt:9,dunk:9,def:6,hair:'short',num:35,ht:1.08},
+      {name:'D. TAURASI',spd:7,threePt:10,dunk:3,def:6,hair:'ponytail',num:3,ht:0.87}
+    ]},
+  {name:'MILWAUKEE',abbr:'MIL',color1:'#00471B',color2:'#EEE1C6',
+    players:[
+      {name:'G. ANTETOKOUNMPO',spd:9,threePt:6,dunk:10,def:9,hair:'short',num:34,ht:1.1},
+      {name:"A'JA WILSON",spd:8,threePt:7,dunk:8,def:9,hair:'ponytail',num:22,ht:0.95}
+    ]},
+  {name:'DALLAS',abbr:'DAL',color1:'#00538C',color2:'#B8C4CA',
+    players:[
+      {name:'L. DONCIC',spd:8,threePt:9,dunk:7,def:5,hair:'short',num:77,ht:1.0},
+      {name:'A. OGWUMIKE',spd:7,threePt:7,dunk:6,def:8,hair:'braids',num:30,ht:0.9}
+    ]},
+  {name:'BOSTON',abbr:'BOS',color1:'#007A33',color2:'#BA9653',
+    players:[
+      {name:'J. TATUM',spd:8,threePt:8,dunk:9,def:7,hair:'short',num:0,ht:1.02},
+      {name:'B. STEWART',spd:7,threePt:8,dunk:7,def:9,hair:'ponytail',num:30,ht:0.95}
+    ]},
+  {name:'MIAMI',abbr:'MIA',color1:'#98002E',color2:'#F9A01B',
+    players:[
+      {name:'J. BUTLER',spd:8,threePt:6,dunk:9,def:9,hair:'headband',num:22,ht:1.0},
+      {name:'K. PLUM',spd:9,threePt:10,dunk:3,def:5,hair:'ponytail',num:10,ht:0.84}
+    ]},
+];
+
+// --- Game State ---
+let scene='title';
+let selectedTeamP1=0,selectedTeamP2=1;
+let cursorTeam=0;
+let quarter=1,quarterTime=60*60;
+const QUARTER_LENGTH=60*60;
+let scoreP1=0,scoreP2=0;
+let titleTimer=0,halftimeTimer=0,gameoverTimer=0;
+let selectPhase=0,selectTimer=0;
+
+// Possession management - prevents AI dunk loops
+let possessionLocked=false; // true during dead ball / inbound
+let inboundTimer=0;
+let lastScoringTeamIsP1=null;
+let shotClockTimer=0;
+const SHOT_CLOCK=24*60; // 24 seconds
+
+// --- Court (logical coordinates — flat space, projected to perspective) ---
+const COURT={x:80,y:150,w:800,h:400,
+  hoopLeftX:120,hoopRightX:840,hoopY:350,
+  threeLineR:190,centerX:480,centerY:350};
+
+// --- Pseudo-3D Perspective Projection ---
+// Maps flat (x,y) court coords to screen coords with perspective
+// Court bottom (y=550) is close/wide, court top (y=150) is far/narrow
+const PERSP={
+  vanishY:40,   // vanishing point Y (above screen)
+  vanishX:480,  // vanishing point X (center)
+  nearScale:1.15,  // scale at bottom of court
+  farScale:0.55, // scale at top of court
+  courtTop:150,
+  courtBot:550,
+};
+
+function perspProject(x,y){
+  // t=0 at top of court (far), t=1 at bottom (near)
+  const t=clamp((y-PERSP.courtTop)/(PERSP.courtBot-PERSP.courtTop),0,1);
+  const scale=lerp(PERSP.farScale,PERSP.nearScale,t);
+  const screenX=PERSP.vanishX+(x-PERSP.vanishX)*scale;
+  const screenY=lerp(PERSP.vanishY+110,PERSP.courtBot,t);
+  return{x:screenX,y:screenY,scale};
+}
+
+function perspScale(y){
+  const t=clamp((y-PERSP.courtTop)/(PERSP.courtBot-PERSP.courtTop),0,1);
+  return lerp(PERSP.farScale,PERSP.nearScale,t);
+}
+
+// --- Entities ---
+let players=[];
+let ball={x:480,y:350,z:0,vx:0,vy:0,vz:0,owner:null,loose:false,
+  shotInFlight:false,shotTarget:{x:0,y:0},shotArc:0,shotTime:0,shotMaxTime:0,
+  shotStartX:0,shotStartY:0,shotStartZ:0,shooter:null,isThree:false,isMiss:false};
+let particles=[];
+let shakeTimer=0,shakeMag=0;
+
+// --- Announcer ---
+let announcerText='',announcerTimer=0;
+function announce(text,duration=120){announcerText=text;announcerTimer=duration}
+
+// --- Utility ---
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function lerp(a,b,t){return a+(b-a)*t}
+function clamp(v,mn,mx){return Math.max(mn,Math.min(mx,v))}
+function rnd(a,b){return a+Math.random()*(b-a)}
+function rndInt(a,b){return Math.floor(rnd(a,b+1))}
+function pick(arr){return arr[rndInt(0,arr.length-1)]}
+
+// --- Player ---
+function createPlayer(teamIdx,playerIdx,team,isP1,slot){
+  const p=team.players[playerIdx];
+  const side=isP1?-1:1;
+  return{
+    teamIdx,playerIdx,team,stats:p,isP1,slot,
+    x:COURT.centerX+side*(120+slot*80),
+    y:COURT.centerY+(slot===0?-50:50),
+    vx:0,vy:0,z:0,vz:0,
+    facing:isP1?1:-1,
+    hasBall:false,
+    turbo:100,turboActive:false,
+    onFire:false,fireStreak:0,
+    shooting:false,shootTimer:0,
+    dunking:false,dunkTimer:0,dunkTarget:{x:0,y:0},dunkStartX:0,dunkStartY:0,
+    shoving:false,shoveTimer:0,shoveCooldown:0,
+    stealing:false,stealCooldown:0,
+    stumble:0,
+    controlled:false,
+    aiTimer:0,aiState:'idle',aiDecisionTimer:0,aiTargetX:0,aiTargetY:0,
+    animFrame:0,animTimer:0,
+    flashTimer:0,
+    width:36,height:48,
+    speed:2.2+p.spd*0.28,
+    // for smooth sprite animation
+    runCycle:0,
+  };
+}
+
+function initGame(){
+  players=[];
+  const t1=TEAMS[selectedTeamP1],t2=TEAMS[selectedTeamP2];
+  players.push(createPlayer(selectedTeamP1,0,t1,true,0));
+  players.push(createPlayer(selectedTeamP1,1,t1,true,1));
+  players.push(createPlayer(selectedTeamP2,0,t2,false,0));
+  players.push(createPlayer(selectedTeamP2,1,t2,false,1));
+  players[0].controlled=true;
+  players[0].hasBall=true;
+  ball.owner=players[0];
+  ball.loose=false;ball.shotInFlight=false;
+  scoreP1=0;scoreP2=0;
+  quarter=1;quarterTime=QUARTER_LENGTH;
+  shotClockTimer=SHOT_CLOCK;
+  particles=[];
+  possessionLocked=false;
+  announce('BOOMSHAKALAKA!',150);
+}
+
+// --- Helpers ---
+function getTeamWithBall(){if(ball.owner)return ball.owner.isP1?'p1':'p2';return null}
+function getControlledPlayer(){return players.find(p=>p.controlled&&p.isP1)}
+function switchControlledPlayer(){
+  const curr=getControlledPlayer();
+  const tm=players.find(p=>p.isP1&&p!==curr);
+  if(curr)curr.controlled=false;
+  if(tm)tm.controlled=true;
+}
+function getTargetHoop(p){return p.isP1?{x:COURT.hoopRightX,y:COURT.hoopY}:{x:COURT.hoopLeftX,y:COURT.hoopY}}
+function isInDunkRange(p){return dist(p,getTargetHoop(p))<110}
+function isThreePoint(p){return dist(p,getTargetHoop(p))>COURT.threeLineR}
+
+// --- Shooting ---
+function attemptShot(p){
+  if(!p.hasBall||p.shooting||p.dunking||p.z>0||possessionLocked)return;
+  const hoop=getTargetHoop(p);
+  if(isInDunkRange(p)&&p.stats.dunk>=5&&dist(p,hoop)<100){
+    p.dunking=true;p.dunkTimer=45;
+    p.dunkTarget={x:hoop.x,y:hoop.y};
+    p.dunkStartX=p.x;p.dunkStartY=p.y;
+    p.vz=9;sfxDunk();
+    announce(pick(['BOOMSHAKALAKA!','MONSTER JAM!','THROWS IT DOWN!','SLAM DUNK!','KABOOM!','OH MY!']),90);
+  }else{
+    p.shooting=true;p.shootTimer=22;p.vz=5.5;sfxShoot();
+  }
+}
+
+function releaseShot(p){
+  if(!p.hasBall)return;
+  const hoop=getTargetHoop(p);
+  const d=dist(p,hoop);
+  const three=isThreePoint(p);
+  let acc=three?p.stats.threePt:(p.stats.threePt+p.stats.dunk)/2;
+  if(p.onFire)acc+=3;
+  if(p.turboActive)acc+=0.5;
+  // distance penalty
+  acc-=Math.max(0,(d-200)*0.01);
+  const miss=rnd(0,10)>clamp(acc,1,10);
+  const tx=hoop.x+(miss?rnd(-45,45):rnd(-8,8));
+  const ty=hoop.y+(miss?rnd(-35,35):rnd(-5,5));
+
+  p.hasBall=false;ball.owner=null;
+  ball.x=p.x;ball.y=p.y;ball.z=p.z+30;
+  ball.shotInFlight=true;
+  ball.shotTarget={x:tx,y:ty};
+  ball.shotTime=0;ball.shotMaxTime=Math.max(35,d/7.5);
+  ball.shotStartX=ball.x;ball.shotStartY=ball.y;ball.shotStartZ=ball.z;
+  ball.shooter=p;ball.isThree=three;ball.isMiss=miss;
+  p.shooting=false;
+}
+
+function performDunk(p){
+  const hoop=getTargetHoop(p);
+  p.hasBall=false;ball.owner=null;
+  ball.x=hoop.x;ball.y=hoop.y;ball.z=50;
+  ball.vx=0;ball.vy=0;ball.vz=-2;
+  ball.shotInFlight=false;ball.loose=true;
+
+  if(p.isP1)scoreP1+=2;else scoreP2+=2;
+  p.fireStreak++;
+  if(p.fireStreak>=3&&!p.onFire){p.onFire=true;announce("HE'S ON FIRE!",120);sfxFire()}
+  // Reset opposing fire
+  players.filter(o=>o.isP1!==p.isP1).forEach(o=>{o.fireStreak=0;o.onFire=false});
+  shakeTimer=18;shakeMag=10;
+  spawnDunkParticles(hoop.x,hoop.y);
+  sfxDunk();
+  // --- POSSESSION FIX: lock possession, schedule inbound to OTHER team ---
+  lastScoringTeamIsP1=p.isP1;
+  lockPossessionAndInbound(!p.isP1);
+}
+
+// --- Possession management ---
+function lockPossessionAndInbound(toP1){
+  possessionLocked=true;
+  inboundTimer=90; // 1.5 seconds before inbound
+  // Nobody can pick up the ball during inbound
+  ball.inboundTo=toP1;
+}
+
+function doInbound(toP1){
+  possessionLocked=false;
+  const receiver=players.find(p=>p.isP1===toP1&&p.slot===0)||players.find(p=>p.isP1===toP1);
+  if(receiver){
+    receiver.hasBall=true;ball.owner=receiver;
+    ball.loose=false;ball.shotInFlight=false;
+    ball.vx=0;ball.vy=0;ball.vz=0;ball.z=0;
+  }
+  resetPositions(toP1);
+  shotClockTimer=SHOT_CLOCK;
+}
+
+function resetPositions(offIsP1){
+  players.forEach(p=>{
+    const off=p.isP1===offIsP1;
+    if(off){
+      p.x=offIsP1?COURT.centerX-80-p.slot*70:COURT.centerX+80+p.slot*70;
+    }else{
+      p.x=offIsP1?COURT.centerX+60+p.slot*70:COURT.centerX-60-p.slot*70;
+    }
+    p.y=COURT.centerY+(p.slot===0?-55:55);
+    p.vx=0;p.vy=0;p.z=0;p.vz=0;
+    p.dunking=false;p.shooting=false;p.stumble=0;
+  });
+}
+
+// --- Ball Physics ---
+function updateBall(){
+  // Inbound timer
+  if(possessionLocked){
+    inboundTimer--;
+    if(inboundTimer<=0){
+      doInbound(ball.inboundTo);
+    }
+    // Ball bounces down near hoop area while waiting
+    if(ball.loose){
+      ball.x+=ball.vx;ball.y+=ball.vy;ball.z+=ball.vz;ball.vz-=0.4;
+      if(ball.z<=0){ball.z=0;ball.vz=Math.abs(ball.vz)*0.4;ball.vx*=0.7;ball.vy*=0.7;if(Math.abs(ball.vz)<0.3)ball.vz=0}
+    }
+    return;
+  }
+
+  if(ball.owner){
+    ball.x=ball.owner.x+ball.owner.facing*14;
+    ball.y=ball.owner.y;
+    ball.z=ball.owner.z+18;
+    return;
+  }
+  if(ball.shotInFlight){
+    ball.shotTime++;
+    const t=ball.shotTime/ball.shotMaxTime;
+    if(t>=1){
+      ball.x=ball.shotTarget.x;ball.y=ball.shotTarget.y;
+      ball.shotInFlight=false;
+      if(!ball.isMiss){
+        const pts=ball.isThree?3:2;
+        if(ball.shooter.isP1)scoreP1+=pts;else scoreP2+=pts;
+        ball.shooter.fireStreak++;
+        if(ball.shooter.fireStreak>=3&&!ball.shooter.onFire){
+          ball.shooter.onFire=true;announce("HE'S ON FIRE!",120);sfxFire();
+        }
+        players.filter(o=>o.isP1!==ball.shooter.isP1).forEach(o=>{o.fireStreak=0;o.onFire=false});
+        sfxSwish();
+        if(ball.isThree)announce("FROM DOWNTOWN!",90);
+        else announce(pick(['NOTHING BUT NET!','HEATING UP!','MONEY!','COUNT IT!','SWISH!','TOO EASY!']),90);
+        spawnScoreParticles(ball.x,ball.y);
+        ball.z=40;ball.vz=-1;ball.vx=(ball.shooter.isP1?-1:1)*2;ball.vy=rnd(-1,1);
+        ball.loose=true;
+        lastScoringTeamIsP1=ball.shooter.isP1;
+        lockPossessionAndInbound(!ball.shooter.isP1);
+      }else{
+        announce(pick(['BRICK!','NO GOOD!','OFF THE RIM!','CLANK!']),60);
+        ball.z=30;ball.vz=rnd(2,5);ball.vx=rnd(-3,3);ball.vy=rnd(-3,3);
+        ball.loose=true;
+        if(ball.shooter){ball.shooter.fireStreak=0;ball.shooter.onFire=false}
+      }
+    }else{
+      ball.x=lerp(ball.shotStartX,ball.shotTarget.x,t);
+      ball.y=lerp(ball.shotStartY,ball.shotTarget.y,t);
+      ball.z=lerp(ball.shotStartZ,40,t)+Math.sin(t*Math.PI)*(100+ball.shotMaxTime*1.5);
+    }
+    return;
+  }
+  // Loose ball
+  if(ball.loose){
+    ball.x+=ball.vx;ball.y+=ball.vy;ball.z+=ball.vz;ball.vz-=0.4;
+    if(ball.z<=0){ball.z=0;ball.vz=Math.abs(ball.vz)*0.45;ball.vx*=0.75;ball.vy*=0.75;if(Math.abs(ball.vz)<0.4)ball.vz=0}
+    ball.x=clamp(ball.x,COURT.x+10,COURT.x+COURT.w-10);
+    ball.y=clamp(ball.y,COURT.y+10,COURT.y+COURT.h-10);
+    // Pickup
+    for(const p of players){
+      if(p.stumble>0||p.dunking||p.shooting)continue;
+      if(dist(p,ball)<32&&ball.z<28){
+        p.hasBall=true;ball.owner=p;ball.loose=false;ball.shotInFlight=false;
+        shotClockTimer=SHOT_CLOCK;
+        break;
+      }
+    }
+  }
+}
+
+// --- Pass ---
+function passBall(p){
+  if(possessionLocked)return;
+  const tm=players.find(pp=>pp.isP1===p.isP1&&pp!==p);
+  if(!tm)return;
+  p.hasBall=false;ball.owner=null;
+  ball.x=p.x;ball.y=p.y;ball.z=p.z+18;
+  ball.shotInFlight=false;ball.loose=true;
+  const d=dist(p,tm);const spd=9;
+  ball.vx=(tm.x-p.x)/d*spd;ball.vy=(tm.y-p.y)/d*spd;ball.vz=2;
+  playTone(350,0.08,'triangle',0.12);
+}
+
+// --- Shove ---
+function doShove(p){
+  if(p.shoveCooldown>0||possessionLocked)return;
+  p.shoveCooldown=35;p.shoving=true;
+  setTimeout(()=>{p.shoving=false},200);sfxShove();
+  for(const other of players){
+    if(other.isP1===p.isP1)continue;
+    if(dist(p,other)<50){
+      other.stumble=35;
+      other.vx=(other.x-p.x)*0.18;other.vy=(other.y-p.y)*0.18;
+      if(other.hasBall){
+        other.hasBall=false;ball.owner=null;ball.loose=true;
+        ball.vx=other.vx*2+rnd(-2,2);ball.vy=other.vy*2+rnd(-2,2);ball.vz=rnd(2,5);
+        ball.x=other.x;ball.y=other.y;ball.z=15;
+        announce(pick(['REJECTED!','GET THAT OUTTA HERE!','NOT IN MY HOUSE!']),60);
+      }
+      spawnHitParticles(other.x,other.y);shakeTimer=6;shakeMag=4;
+      break;
+    }
+  }
+}
+
+// --- Steal ---
+function doSteal(p){
+  if(p.stealCooldown>0||possessionLocked)return;
+  p.stealCooldown=25;p.stealing=true;
+  setTimeout(()=>{p.stealing=false},150);
+  for(const other of players){
+    if(other.isP1===p.isP1)continue;
+    if(dist(p,other)<48&&other.hasBall){
+      const chance=p.stats.def*9+(p.turboActive?15:0);
+      if(rnd(0,100)<chance){
+        other.hasBall=false;ball.owner=null;ball.loose=true;
+        ball.x=other.x;ball.y=other.y;ball.z=15;
+        ball.vx=(p.x-other.x)*0.12;ball.vy=(p.y-other.y)*0.12;ball.vz=3;
+        sfxSteal();announce('STOLEN!',60);
+        other.fireStreak=0;other.onFire=false;
+        shotClockTimer=SHOT_CLOCK;
+      }
+      break;
+    }
+  }
+}
+
+// ============================================================
+//  IMPROVED AI — No more dunk loops
+// ============================================================
+function updateAI(p){
+  p.aiTimer++;
+  if(p.stumble>0||p.dunking||p.shooting||possessionLocked)return;
+  const myTeamHasBall=getTeamWithBall()===(p.isP1?'p1':'p2');
+  const hoop=getTargetHoop(p);
+  const spd=p.speed*(p.turboActive?1.5:1)*(p.onFire?1.12:1);
+
+  // Cooldowns
+  if(p.shoveCooldown>0)p.shoveCooldown--;
+  if(p.stealCooldown>0)p.stealCooldown--;
+
+  // Decision timer - prevents rapid-fire actions
+  p.aiDecisionTimer--;
+
+  if(myTeamHasBall){
+    if(p.hasBall){
+      // --- AI WITH BALL: smarter offense ---
+      const dToHoop=dist(p,hoop);
+      const enemies=players.filter(e=>e.isP1!==p.isP1);
+      const nearestEnemy=enemies.reduce((closest,e)=>dist(p,e)<dist(p,closest)?e:closest,enemies[0]);
+      const enemyDist=nearestEnemy?dist(p,nearestEnemy):999;
+
+      // Use turbo when driving
+      p.turboActive=p.turbo>20&&dToHoop<280&&enemyDist>60;
+
+      if(p.aiDecisionTimer<=0){
+        p.aiDecisionTimer=rndInt(15,35); // Think every ~0.25-0.6 sec
+
+        // Decision tree
+        if(dToHoop<90&&p.z===0&&enemyDist>35){
+          // Close + open = dunk/layup
+          attemptShot(p);return;
+        }else if(dToHoop<160&&p.z===0&&p.stats.threePt>=7&&rnd(0,1)<0.3){
+          // Mid-range jumper
+          attemptShot(p);return;
+        }else if(dToHoop>200&&isThreePoint(p)&&p.stats.threePt>=8&&rnd(0,1)<0.15){
+          // Three pointer if skilled
+          attemptShot(p);return;
+        }else if(p.onFire&&dToHoop<250&&rnd(0,1)<0.25){
+          // On fire = more aggressive
+          attemptShot(p);return;
+        }else if(enemyDist<45&&rnd(0,1)<0.4){
+          // Defender close - pass to teammate
+          passBall(p);return;
+        }
+      }
+
+      // Move toward hoop with weaving
+      const angle=Math.atan2(hoop.y-p.y,hoop.x-p.x)+Math.sin(p.aiTimer*0.04)*0.4;
+      p.vx=Math.cos(angle)*spd*0.75;
+      p.vy=Math.sin(angle)*spd*0.75;
+      p.facing=p.vx>0?1:-1;
+
+    }else{
+      // AI teammate without ball — get open
+      const carrier=players.find(pp=>pp.hasBall&&pp.isP1===p.isP1);
+      const offset=p.slot===0?-90:90;
+      let tgtX=hoop.x+(p.isP1?-160:160)+Math.sin(p.aiTimer*0.025)*60;
+      let tgtY=hoop.y+offset+Math.cos(p.aiTimer*0.03)*40;
+      tgtX=clamp(tgtX,COURT.x+40,COURT.x+COURT.w-40);
+      tgtY=clamp(tgtY,COURT.y+40,COURT.y+COURT.h-40);
+      const dx=tgtX-p.x,dy=tgtY-p.y,d=Math.hypot(dx,dy);
+      if(d>15){p.vx=(dx/d)*spd*0.6;p.vy=(dy/d)*spd*0.6;p.facing=dx>0?1:-1}
+      else{p.vx*=0.8;p.vy*=0.8}
+    }
+  }else{
+    // --- DEFENSE ---
+    const opponents=players.filter(pp=>pp.isP1!==p.isP1);
+    const myTarget=opponents[p.slot]||opponents[0];
+    const myHoop=p.isP1?{x:COURT.hoopLeftX,y:COURT.hoopY}:{x:COURT.hoopRightX,y:COURT.hoopY};
+
+    // Guard between target and our hoop
+    const guardX=lerp(myTarget.x,myHoop.x,0.35);
+    const guardY=lerp(myTarget.y,myHoop.y,0.3);
+    const gdx=guardX-p.x,gdy=guardY-p.y,gd=Math.hypot(gdx,gdy);
+    if(gd>12){p.vx=(gdx/gd)*spd*0.65;p.vy=(gdy/gd)*spd*0.65;p.facing=myTarget.x>p.x?1:-1}
+    else{p.vx*=0.8;p.vy*=0.8}
+
+    // Turbo on defense when close
+    p.turboActive=p.turbo>25&&dist(p,myTarget)<80;
+
+    const targetDist=dist(p,myTarget);
+    // Steal attempt
+    if(myTarget.hasBall&&targetDist<50&&p.stealCooldown<=0&&p.aiDecisionTimer<=0&&rnd(0,1)<0.12){
+      doSteal(p);p.aiDecisionTimer=rndInt(30,50);
+    }
+    // Shove attempt
+    if(targetDist<45&&p.shoveCooldown<=0&&p.aiDecisionTimer<=0&&rnd(0,1)<0.06){
+      doShove(p);p.aiDecisionTimer=rndInt(40,60);
+    }
+    // Chase loose ball
+    if(ball.loose&&!ball.shotInFlight&&!possessionLocked&&dist(p,ball)<100){
+      const dx=ball.x-p.x,dy=ball.y-p.y,d=Math.hypot(dx,dy);
+      if(d>5){p.vx=(dx/d)*spd*0.9;p.vy=(dy/d)*spd*0.9}
+    }
+  }
+}
+
+// --- Player Update ---
+function updatePlayers(){
+  for(const p of players){
+    p.animTimer++;
+    if(p.animTimer>8){p.animTimer=0;p.animFrame=(p.animFrame+1)%4}
+    if(p.flashTimer>0)p.flashTimer--;
+    if(p.stumble>0){p.stumble--;p.vx*=0.88;p.vy*=0.88}
+    if(!p.turboActive&&p.turbo<100)p.turbo=Math.min(100,p.turbo+0.25);
+    if(p.shoveCooldown>0)p.shoveCooldown--;
+    if(p.stealCooldown>0)p.stealCooldown--;
+
+    // Jump
+    if(p.z>0||p.vz>0){p.z+=p.vz;p.vz-=0.42;if(p.z<=0){p.z=0;p.vz=0}}
+
+    // Run cycle
+    if(Math.abs(p.vx)>0.5||Math.abs(p.vy)>0.5){p.runCycle+=0.2}
+
+    // Dunk
+    if(p.dunking){
+      p.dunkTimer--;
+      const t=1-p.dunkTimer/45;
+      p.x=lerp(p.dunkStartX,p.dunkTarget.x,Math.min(t*1.2,1));
+      p.y=lerp(p.dunkStartY,p.dunkTarget.y,Math.min(t*1.1,1));
+      if(p.dunkTimer<=6&&p.hasBall)performDunk(p);
+      if(p.dunkTimer<=0){p.dunking=false;p.z=Math.max(p.z,0)}
+      continue;
+    }
+
+    // Shoot release
+    if(p.shooting){p.shootTimer--;if(p.shootTimer<=0)releaseShot(p);continue}
+
+    // Player-controlled
+    if(p.controlled&&p.isP1&&p.stumble<=0&&!possessionLocked){
+      let mx=0,my=0;
+      if(keys['ArrowLeft']||keys['KeyA'])mx=-1;
+      if(keys['ArrowRight']||keys['KeyD'])mx=1;
+      if(keys['ArrowUp']||keys['KeyW'])my=-1;
+      if(keys['ArrowDown']||keys['KeyS'])my=1;
+      p.turboActive=(keys['ShiftLeft']||keys['ShiftRight'])&&p.turbo>0;
+      if(p.turboActive){p.turbo-=0.7;if(p.turbo<=0)p.turboActive=false}
+      const spd=p.speed*(p.turboActive?1.6:1)*(p.onFire?1.12:1);
+      if(mx||my){
+        const len=Math.hypot(mx,my);
+        p.vx=(mx/len)*spd;p.vy=(my/len)*spd;
+        p.facing=mx>0?1:mx<0?-1:p.facing;
+      }else{p.vx*=0.7;p.vy*=0.7}
+
+      if((keys['Space']||keys['KeyZ'])&&p.hasBall&&p.z===0){attemptShot(p);keys['Space']=false;keys['KeyZ']=false}
+      if((keys['KeyX']||keys['KeyC'])&&p.hasBall){passBall(p);keys['KeyX']=false;keys['KeyC']=false}
+      if((keys['Space']||keys['KeyZ'])&&!p.hasBall&&p.z===0){doShove(p);keys['Space']=false;keys['KeyZ']=false}
+      if((keys['KeyX']||keys['KeyC'])&&!p.hasBall){doSteal(p);keys['KeyX']=false;keys['KeyC']=false}
+      if(keys['KeyQ']||keys['Tab']){switchControlledPlayer();keys['KeyQ']=false;keys['Tab']=false}
+    }else if(!p.isP1||!p.controlled){
+      updateAI(p);
+    }
+
+    p.x+=p.vx;p.y+=p.vy;
+    p.x=clamp(p.x,COURT.x+20,COURT.x+COURT.w-20);
+    p.y=clamp(p.y,COURT.y+20,COURT.y+COURT.h-20);
+
+    // Collision
+    for(const other of players){
+      if(other===p)continue;
+      const d=dist(p,other);
+      if(d<26&&d>0){
+        const nx=(p.x-other.x)/d,ny=(p.y-other.y)/d;
+        const push=(26-d)*0.5;
+        p.x+=nx*push;p.y+=ny*push;
+        other.x-=nx*push;other.y-=ny*push;
+      }
+    }
+  }
+}
+
+// --- Particles ---
+function spawnScoreParticles(x,y){for(let i=0;i<25;i++)particles.push({x,y,vx:rnd(-5,5),vy:rnd(-7,-1),life:rnd(25,55),maxLife:55,color:`hsl(${rnd(30,60)},100%,${rnd(50,80)}%)`,size:rnd(3,8)})}
+function spawnDunkParticles(x,y){for(let i=0;i<40;i++)particles.push({x,y,vx:rnd(-7,7),vy:rnd(-9,2),life:rnd(25,65),maxLife:65,color:`hsl(${rnd(0,40)},100%,${rnd(40,70)}%)`,size:rnd(4,12)})}
+function spawnHitParticles(x,y){for(let i=0;i<15;i++)particles.push({x,y,vx:rnd(-4,4),vy:rnd(-4,4),life:rnd(10,28),maxLife:28,color:'#FFF',size:rnd(2,6)})}
+function spawnFireParticles(x,y){particles.push({x:x+rnd(-10,10),y:y+rnd(-5,5),vx:rnd(-0.5,0.5),vy:rnd(-3.5,-1.5),life:18,maxLife:18,color:`hsl(${rnd(0,45)},100%,60%)`,size:rnd(4,10)})}
+function updateParticles(){for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.x+=p.vx;p.y+=p.vy;p.vy+=0.15;p.life--;if(p.life<=0)particles.splice(i,1)}}
+
+// ============================================================
+//  DRAWING — BIG HEAD / SMALL BODY STYLE
+// ============================================================
+
+// --- Perspective Court Drawing ---
+// Helper: draw a line between two projected points
+function perspLine(x1,y1,x2,y2){
+  const a=perspProject(x1,y1),b=perspProject(x2,y2);
+  ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+}
+
+// Helper: draw a filled quad from 4 flat-space corners
+function perspQuad(x1,y1,x2,y2,x3,y3,x4,y4){
+  const a=perspProject(x1,y1),b=perspProject(x2,y2),c=perspProject(x3,y3),d=perspProject(x4,y4);
+  ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.lineTo(d.x,d.y);ctx.closePath();
+}
+
+function drawCourt(){
+  const cx=COURT.x,cy=COURT.y,cw=COURT.w,ch=COURT.h;
+  const cr=cx+cw,cb=cy+ch;
+
+  // Court floor (perspective trapezoid)
+  ctx.fillStyle='#C6884A';
+  perspQuad(cx,cy,cr,cy,cr,cb,cx,cb);ctx.fill();
+
+  // Wood grain lines
+  ctx.strokeStyle='rgba(160,100,40,0.35)';ctx.lineWidth=1;
+  for(let y=cy;y<=cb;y+=12){perspLine(cx,y,cr,y)}
+
+  // Darker edge strip for depth
+  ctx.fillStyle='rgba(0,0,0,0.08)';
+  perspQuad(cx,cy,cx+30,cy,cx+30,cb,cx,cb);ctx.fill();
+  perspQuad(cr-30,cy,cr,cy,cr,cb,cr-30,cb);ctx.fill();
+
+  // Court border
+  ctx.strokeStyle='rgba(255,255,255,0.75)';ctx.lineWidth=2;
+  perspQuad(cx,cy,cr,cy,cr,cb,cx,cb);ctx.stroke();
+
+  // Center line
+  perspLine(COURT.centerX,cy,COURT.centerX,cb);
+
+  // Center circle (approximate with small line segments)
+  ctx.strokeStyle='rgba(255,255,255,0.7)';ctx.lineWidth=2;
+  ctx.beginPath();
+  for(let a=0;a<=Math.PI*2;a+=0.15){
+    const px=COURT.centerX+Math.cos(a)*55;
+    const py=COURT.centerY+Math.sin(a)*55;
+    const pp=perspProject(px,py);
+    if(a===0)ctx.moveTo(pp.x,pp.y);else ctx.lineTo(pp.x,pp.y);
+  }
+  ctx.closePath();ctx.stroke();
+
+  // Three-point arcs
+  ctx.strokeStyle='rgba(255,255,255,0.65)';ctx.lineWidth=2;
+  // Left arc
+  ctx.beginPath();
+  for(let a=-0.42;a<=0.42;a+=0.06){
+    const px=COURT.hoopLeftX+Math.cos(a)*COURT.threeLineR;
+    const py=COURT.hoopY+Math.sin(a)*COURT.threeLineR;
+    const pp=perspProject(px,py);
+    if(a<=-0.4)ctx.moveTo(pp.x,pp.y);else ctx.lineTo(pp.x,pp.y);
+  }
+  ctx.stroke();
+  // Right arc
+  ctx.beginPath();
+  for(let a=Math.PI-0.42;a<=Math.PI+0.42;a+=0.06){
+    const px=COURT.hoopRightX+Math.cos(a)*COURT.threeLineR;
+    const py=COURT.hoopY+Math.sin(a)*COURT.threeLineR;
+    const pp=perspProject(px,py);
+    if(a<=Math.PI-0.4)ctx.moveTo(pp.x,pp.y);else ctx.lineTo(pp.x,pp.y);
+  }
+  ctx.stroke();
+
+  // Keys (painted area rectangles)
+  ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.lineWidth=2;
+  perspQuad(cx,COURT.hoopY-65,cx+85,COURT.hoopY-65,cx+85,COURT.hoopY+65,cx,COURT.hoopY+65);ctx.stroke();
+  // Painted fill
+  ctx.fillStyle='rgba(200,50,50,0.15)';
+  perspQuad(cx,COURT.hoopY-65,cx+85,COURT.hoopY-65,cx+85,COURT.hoopY+65,cx,COURT.hoopY+65);ctx.fill();
+  perspQuad(cr-85,COURT.hoopY-65,cr,COURT.hoopY-65,cr,COURT.hoopY+65,cr-85,COURT.hoopY+65);ctx.stroke();
+  ctx.fillStyle='rgba(200,50,50,0.15)';
+  perspQuad(cr-85,COURT.hoopY-65,cr,COURT.hoopY-65,cr,COURT.hoopY+65,cr-85,COURT.hoopY+65);ctx.fill();
+
+  // Hoops
+  drawHoop(COURT.hoopLeftX,COURT.hoopY,-1);
+  drawHoop(COURT.hoopRightX,COURT.hoopY,1);
+}
+
+function drawHoop(x,y,dir){
+  const pp=perspProject(x,y);
+  const sc=pp.scale;
+  // Backboard
+  ctx.fillStyle='rgba(255,255,255,0.9)';
+  ctx.fillRect(pp.x+dir*10*sc,pp.y-22*sc,5*sc,44*sc);
+  ctx.strokeStyle='#333';ctx.lineWidth=1;
+  ctx.strokeRect(pp.x+dir*10*sc,pp.y-22*sc,5*sc,44*sc);
+  // Rim
+  ctx.strokeStyle='#FF4400';ctx.lineWidth=3*sc;
+  ctx.beginPath();ctx.ellipse(pp.x-dir*8*sc,pp.y,15*sc,9*sc,0,0,Math.PI*2);ctx.stroke();
+  // Net
+  ctx.strokeStyle='rgba(255,255,255,0.5)';ctx.lineWidth=1;
+  for(let i=-3;i<=3;i++){
+    ctx.beginPath();ctx.moveTo(pp.x-dir*8*sc+i*4*sc,pp.y+9*sc);ctx.lineTo(pp.x-dir*8*sc+i*2.5*sc,pp.y+28*sc);ctx.stroke();
+  }
+}
+
+// ============================================================
+//  MEGA BIG HEAD — CUSTOM BEZIER CONTOUR PER PLAYER
+//  Each player has a unique head silhouette you can recognize
+// ============================================================
+function getLooks(p){
+  return PLAYER_LOOKS[p.stats.name]||{skin:'#B08060',skinD:'#907050',skinL:'#D0A080',
+    headW:1,headH:1,earSz:0.9,eyeSz:1,noseW:1,beard:'none',beardC:'',
+    hairC:'#1A1A1A',eyeC:'#3A2200',id:'generic'};
+}
+
+function drawPlayer(p){
+  ctx.save();
+  const sx=p.x, sy=p.y-p.z;
+  const lk=getLooks(p);
+  const R=32; // base head radius
+  const hw=R*lk.headW, hh=R*lk.headH; // ellipse radii
+  const OL=2.5; // OUTLINE thickness — the arcade look
+  const sk=lk.skin, skD=lk.skinD, skL=lk.skinL;
+  const fDir=p.facing;
+  const pid=lk.id;
+
+  // --- Ground Shadow ---
+  const shSc=1+p.z*0.008;
+  ctx.fillStyle=`rgba(0,0,0,${p.z>0?0.35:0.2})`;
+  ctx.beginPath();ctx.ellipse(p.x,p.y+20,20*shSc,7*shSc,0,0,Math.PI*2);ctx.fill();
+
+  // Fire particles
+  if(p.onFire){spawnFireParticles(sx+rnd(-10,10),sy-hh*2-8);spawnFireParticles(sx+rnd(-6,6),sy-hh*2)}
+
+  // Stumble tilt
+  if(p.stumble>0){ctx.translate(sx,sy);ctx.rotate(Math.sin(p.stumble*0.5)*0.4);ctx.translate(-sx,-sy)}
+  if(p.flashTimer>0&&p.flashTimer%4<2)ctx.globalAlpha=0.5;
+
+  const legPhase=Math.sin(p.runCycle);
+  const moving=Math.abs(p.vx)>0.6||Math.abs(p.vy)>0.6;
+  const c1=p.team.color1, c2=p.team.color2;
+  const shoeC=c2==='#000000'?'#333':c2;
+
+  // Helper: outlined ellipse
+  function oEllipse(cx,cy,rx,ry,fill){
+    ctx.fillStyle='#000';ctx.beginPath();ctx.ellipse(cx,cy,rx+OL,ry+OL,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=fill;ctx.beginPath();ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2);ctx.fill();
+  }
+  // Helper: outlined rounded rect
+  function oRoundRect(x,y,w,h,r,fill){
+    ctx.fillStyle='#000';roundRect(x-OL,y-OL,w+OL*2,h+OL*2,r+1);ctx.fill();
+    ctx.fillStyle=fill;roundRect(x,y,w,h,r);ctx.fill();
+  }
+  // Helper: outlined rect
+  function oRect(x,y,w,h,fill){
+    ctx.fillStyle='#000';ctx.fillRect(x-OL,y-OL,w+OL*2,h+OL*2);
+    ctx.fillStyle=fill;ctx.fillRect(x,y,w,h);
+  }
+
+  // ============ BODY ============
+  const torsoTop=sy-10; const torsoH=16; const torsoW=22;
+  const legTop=sy+5; const legLen=10;
+
+  // LEGS (with outline)
+  const lL=moving?legPhase*6:0, rL=moving?-legPhase*6:0;
+  oRect(sx-7,legTop+4,6,legLen+lL,sk); // left leg
+  oRect(sx+1,legTop+4,6,legLen+rL,sk); // right leg
+  // Shoes
+  oRoundRect(sx-9,legTop+4+legLen+lL,9,5,2,shoeC);
+  oRoundRect(sx-1,legTop+4+legLen+rL,9,5,2,shoeC);
+  // White sole
+  ctx.fillStyle='#FFF';
+  ctx.fillRect(sx-8,legTop+7+legLen+lL,7,2);
+  ctx.fillRect(sx,legTop+7+legLen+rL,7,2);
+
+  // SHORTS
+  oRoundRect(sx-torsoW/2+1,torsoTop+torsoH-4,torsoW-2,10,3,c1);
+  // Stripe on shorts
+  ctx.fillStyle=c2;ctx.fillRect(sx-torsoW/2+3,torsoTop+torsoH+3,torsoW-6,2);
+
+  // TORSO (jersey)
+  oRoundRect(sx-torsoW/2,torsoTop,torsoW,torsoH,4,c1);
+  // Jersey trim
+  ctx.fillStyle=c2;
+  ctx.fillRect(sx-torsoW/2+1,torsoTop+1,torsoW-2,3); // collar
+  // Jersey number
+  ctx.fillStyle='#FFF';ctx.font='bold 10px Arial';ctx.textAlign='center';
+  ctx.strokeStyle=c2;ctx.lineWidth=1.5;
+  ctx.strokeText(p.stats.num,sx,torsoTop+13);
+  ctx.fillText(p.stats.num,sx,torsoTop+13);
+
+  // ARMS (rounded, with hands!)
+  const armTop=torsoTop+3;const armW=7;const armLen=12;
+  if(p.dunking){
+    // Arms up — SLAM pose
+    oRect(sx-torsoW/2-armW+1,torsoTop-14,armW,16,sk);
+    oRect(sx+torsoW/2-1,torsoTop-14,armW,16,sk);
+    // Fists
+    oEllipse(sx-torsoW/2-armW/2+1,torsoTop-16,5,5,sk);
+    oEllipse(sx+torsoW/2+armW/2-1,torsoTop-16,5,5,sk);
+  }else if(p.shoving){
+    // Shove arm forward
+    oRect(sx+fDir*(torsoW/2),armTop,fDir*18,armW,sk);
+    // Fist
+    oEllipse(sx+fDir*(torsoW/2+18),armTop+armW/2,5,5,sk);
+    oRect(sx-fDir*(torsoW/2+armW),armTop+1,armW,armLen-3,sk);
+  }else if(p.hasBall){
+    oRect(sx+fDir*(torsoW/2),armTop,fDir*10,armW,sk);
+    oRect(sx-fDir*(torsoW/2+armW),armTop+1,armW,armLen-2,sk);
+    // Hand
+    oEllipse(sx+fDir*(torsoW/2+10),armTop+armW/2,4,4,sk);
+  }else{
+    const sw=moving?Math.sin(p.runCycle)*5:0;
+    oRect(sx-torsoW/2-armW,armTop+sw,armW,armLen,sk);
+    oRect(sx+torsoW/2,armTop-sw,armW,armLen,sk);
+    // Hands
+    oEllipse(sx-torsoW/2-armW/2,armTop+sw+armLen,4,4,sk);
+    oEllipse(sx+torsoW/2+armW/2,armTop-sw+armLen,4,4,sk);
+  }
+
+  // Wristbands (some players)
+  if(pid==='lebron'||pid==='tatum'||pid==='giannis'){
+    ctx.fillStyle=c1;
+    ctx.fillRect(sx-torsoW/2-armW-1,armTop+5,armW+2,3);
+    ctx.fillRect(sx+torsoW/2-1,armTop+5,armW+2,3);
+  }
+
+  // ============ HUGE HEAD ============
+  const headCY=sy-30;
+
+  // Neck (outlined)
+  oRect(sx-5,torsoTop-6,10,8,sk);
+
+  // EARS (behind head for some, with outline)
+  const earS=lk.earSz;
+  const earX=hw+2;
+  oEllipse(sx-earX,headCY+2,5*earS,8*earS,sk);
+  oEllipse(sx+earX,headCY+2,5*earS,8*earS,sk);
+  // Ear inner
+  ctx.fillStyle=skD;
+  ctx.beginPath();ctx.ellipse(sx-earX+1,headCY+2,3*earS,5*earS,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(sx+earX-1,headCY+2,3*earS,5*earS,0,0,Math.PI*2);ctx.fill();
+
+  // HEAD — clean bold outlined ellipse
+  oEllipse(sx,headCY,hw,hh,sk);
+
+  // Forehead highlight
+  ctx.fillStyle=skL;ctx.globalAlpha=0.35;
+  ctx.beginPath();ctx.ellipse(sx-3,headCY-hh*0.35,hw*0.5,hh*0.3,0,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
+
+  // ============ HAIR (the #1 visual identifier!) ============
+  const hC=lk.hairC;
+  const hCD='#'+[0,2,4].map(i=>Math.max(0,parseInt(hC.slice(1+i,3+i),16)-40).toString(16).padStart(2,'0')).join('');
+
+  if(p.stats.hair==='bald'){
+    // JORDAN — gleaming bald dome
+    ctx.fillStyle='rgba(255,255,255,0.3)';
+    ctx.beginPath();ctx.ellipse(sx-4,headCY-hh*0.45,hw*0.35,hh*0.2,0.3,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.15)';
+    ctx.beginPath();ctx.ellipse(sx+6,headCY-hh*0.55,hw*0.18,hh*0.12,-0.3,0,Math.PI*2);ctx.fill();
+  }else if(p.stats.hair==='short'){
+    // Short hair cap (with outline!)
+    ctx.fillStyle='#000';
+    ctx.beginPath();
+    ctx.ellipse(sx,headCY-hh*0.15,hw+OL+1,hh*0.7+OL+1,0,Math.PI,Math.PI*2);ctx.fill();
+    ctx.fillStyle=hC;
+    ctx.beginPath();
+    ctx.ellipse(sx,headCY-hh*0.15,hw+1,hh*0.7,0,Math.PI,Math.PI*2);ctx.fill();
+    // Hairline edge
+    ctx.fillStyle=hCD;
+    ctx.beginPath();
+    ctx.ellipse(sx,headCY-hh*0.08,hw-2,hh*0.12,0,Math.PI,Math.PI*2);ctx.fill();
+    // Doncic gets shaggy/messy texture
+    if(pid==='doncic'){
+      ctx.fillStyle=hC;
+      for(let i=-3;i<=3;i++){
+        ctx.beginPath();ctx.ellipse(sx+i*5,headCY-hh+2+Math.abs(i)*2,4,6+Math.random()*2,i*0.15,0,Math.PI*2);ctx.fill();
+      }
+    }
+    // Tatum gets flat-top fade
+    if(pid==='tatum'){
+      ctx.fillStyle=hC;ctx.fillRect(sx-hw*0.7,headCY-hh-3,hw*1.4,6); // flat top
+      ctx.fillStyle='#000';ctx.fillRect(sx-hw*0.7-OL,headCY-hh-3-OL,hw*1.4+OL*2,OL); // outline top
+      // Fade lines on sides
+      ctx.strokeStyle=skD;ctx.lineWidth=1;ctx.globalAlpha=0.3;
+      for(let i=0;i<4;i++){
+        const fy=headCY-hh*0.2+i*3;
+        ctx.beginPath();ctx.moveTo(sx-hw+2,fy);ctx.lineTo(sx-hw+8,fy);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(sx+hw-2,fy);ctx.lineTo(sx+hw-8,fy);ctx.stroke();
+      }
+      ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
+    }
+  }else if(p.stats.hair==='headband'){
+    // Hair above headband
+    ctx.fillStyle='#000';
+    ctx.beginPath();ctx.ellipse(sx,headCY-hh*0.25,hw+OL+1,hh*0.65+OL,0,Math.PI,Math.PI*2);ctx.fill();
+    ctx.fillStyle=hC;
+    ctx.beginPath();ctx.ellipse(sx,headCY-hh*0.25,hw+1,hh*0.65,0,Math.PI,Math.PI*2);ctx.fill();
+
+    // BUTLER — WILD EMO HAIR (THE signature look!)
+    if(pid==='butler'){
+      ctx.fillStyle=hC;ctx.strokeStyle='#000';ctx.lineWidth=2;
+      // Giant wild spiky strands shooting everywhere
+      for(let i=-4;i<=4;i++){
+        const bx=sx+i*5;const ang=-0.9+i*0.2;const len=22+Math.abs(i)*4;
+        ctx.save();ctx.translate(bx,headCY-hh-1);ctx.rotate(ang);
+        ctx.fillRect(-3,0,6,-len);
+        ctx.strokeRect(-3,0,6,-len);
+        ctx.restore();
+      }
+      // Extra crazy long center ones
+      ctx.save();ctx.translate(sx-2,headCY-hh);ctx.rotate(-0.15);
+      ctx.fillRect(-4,0,8,-32);ctx.strokeRect(-4,0,8,-32);ctx.restore();
+      ctx.save();ctx.translate(sx+5,headCY-hh);ctx.rotate(0.2);
+      ctx.fillRect(-3,0,6,-28);ctx.strokeRect(-3,0,6,-28);ctx.restore();
+    }
+
+    // LEBRON — receding hairline (visible forehead)
+    if(pid==='lebron'){
+      ctx.fillStyle=sk;
+      ctx.beginPath();ctx.ellipse(sx,headCY-hh+4,hw*0.55,hh*0.22,0,0,Math.PI*2);ctx.fill();
+      // Widow's peak
+      ctx.fillStyle=hC;
+      ctx.beginPath();ctx.moveTo(sx-4,headCY-hh+8);ctx.lineTo(sx,headCY-hh+2);ctx.lineTo(sx+4,headCY-hh+8);ctx.fill();
+    }
+
+    // GIANNIS — very tall head with short hair peeking above headband
+    if(pid==='giannis'){
+      // Extra tufts above
+      ctx.fillStyle=hC;
+      for(let i=-2;i<=2;i++){
+        ctx.beginPath();ctx.ellipse(sx+i*6,headCY-hh-2,5,4,0,0,Math.PI*2);ctx.fill();
+      }
+    }
+
+    // STEWART — short hair above headband
+    if(pid==='stewart'){
+      // Neat short cap
+    }
+
+    // HEADBAND (bold, with outline!)
+    const hbY=headCY-hh*0.6;
+    ctx.fillStyle='#000';
+    ctx.fillRect(sx-hw-4,hbY-1,hw*2+8,9);
+    ctx.fillStyle=c1;
+    ctx.fillRect(sx-hw-2,hbY+1,hw*2+4,6);
+    // Band detail
+    ctx.fillStyle=c2;ctx.fillRect(sx-hw,hbY+3,hw*2,2);
+    // Knot on side
+    ctx.fillStyle=c1;
+    ctx.beginPath();ctx.arc(sx-hw-3,hbY+4,5,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#000';
+    ctx.beginPath();ctx.arc(sx-hw-3,hbY+4,5,0,Math.PI*2);ctx.stroke();
+  }else if(p.stats.hair==='ponytail'){
+    // Full hair top (outlined)
+    ctx.fillStyle='#000';
+    ctx.beginPath();ctx.ellipse(sx,headCY-hh*0.2,hw+OL+2,hh*0.68+OL+1,0,Math.PI,Math.PI*2);ctx.fill();
+    ctx.fillStyle=hC;
+    ctx.beginPath();ctx.ellipse(sx,headCY-hh*0.2,hw+2,hh*0.68,0,Math.PI,Math.PI*2);ctx.fill();
+
+    // Ponytail flowing behind (thick, with outline!)
+    ctx.strokeStyle='#000';ctx.lineWidth=10;ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(sx-fDir*3,headCY-hh*0.8);
+    ctx.quadraticCurveTo(sx-fDir*30,headCY-hh-5,sx-fDir*38,headCY);
+    ctx.quadraticCurveTo(sx-fDir*42,headCY+15,sx-fDir*32,headCY+22);
+    ctx.stroke();
+    ctx.strokeStyle=hC;ctx.lineWidth=7;
+    ctx.beginPath();
+    ctx.moveTo(sx-fDir*3,headCY-hh*0.8);
+    ctx.quadraticCurveTo(sx-fDir*30,headCY-hh-5,sx-fDir*38,headCY);
+    ctx.quadraticCurveTo(sx-fDir*42,headCY+15,sx-fDir*32,headCY+22);
+    ctx.stroke();
+    // Hair tie
+    oEllipse(sx-fDir*8,headCY-hh*0.75,4,4,c1);
+  }else if(p.stats.hair==='braids'){
+    // Hair top
+    ctx.fillStyle='#000';
+    ctx.beginPath();ctx.ellipse(sx,headCY-hh*0.15,hw+OL+1,hh*0.65+OL,0,Math.PI,Math.PI*2);ctx.fill();
+    ctx.fillStyle=hC;
+    ctx.beginPath();ctx.ellipse(sx,headCY-hh*0.15,hw+1,hh*0.65,0,Math.PI,Math.PI*2);ctx.fill();
+
+    // BRAIDS hanging down (thick, with outlines!)
+    for(let b=-3;b<=3;b++){
+      const bsx=sx+b*5.5, bsy=headCY+hh*0.3;
+      ctx.strokeStyle='#000';ctx.lineWidth=5;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(bsx,bsy);
+      ctx.quadraticCurveTo(bsx+b*2,bsy+18,bsx+b*3,bsy+30);ctx.stroke();
+      ctx.strokeStyle=hC;ctx.lineWidth=3;
+      ctx.beginPath();ctx.moveTo(bsx,bsy);
+      ctx.quadraticCurveTo(bsx+b*2,bsy+18,bsx+b*3,bsy+30);ctx.stroke();
+    }
+    // Beads / gold tips
+    const beadC=c2==='#000000'?'#FFD700':c2;
+    for(let b=-3;b<=3;b++){
+      oEllipse(sx+b*5.5+b*3,headCY+hh*0.3+30,3,3,beadC);
+    }
+  }
+
+  // ============ FACE ============
+  const eyeCX=sx+fDir*6;
+  const eyeCY=headCY-hh*0.05;
+  const es=lk.eyeSz;
+
+  // EYES — big, bold, expressive (with black outlines!)
+  // Eye whites (outlined)
+  oEllipse(eyeCX-8,eyeCY,8*es,6*es,'#FFF');
+  oEllipse(eyeCX+8,eyeCY,8*es,6*es,'#FFF');
+
+  // Irises (big!)
+  ctx.fillStyle=lk.eyeC;
+  ctx.beginPath();ctx.arc(eyeCX-8+fDir*2,eyeCY+0.5,4.5*es,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(eyeCX+8+fDir*2,eyeCY+0.5,4.5*es,0,Math.PI*2);ctx.fill();
+  // Pupils
+  ctx.fillStyle='#000';
+  ctx.beginPath();ctx.arc(eyeCX-8+fDir*2.5,eyeCY+0.5,2.5*es,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(eyeCX+8+fDir*2.5,eyeCY+0.5,2.5*es,0,Math.PI*2);ctx.fill();
+  // Eye shine (makes them look alive)
+  ctx.fillStyle='#FFF';
+  ctx.beginPath();ctx.arc(eyeCX-8+fDir*1,eyeCY-2,2,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(eyeCX+8+fDir*1,eyeCY-2,2,0,Math.PI*2);ctx.fill();
+
+  // Angry eyes when dunking/shoving
+  if(p.dunking||p.shoving){
+    ctx.strokeStyle='#000';ctx.lineWidth=3;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(eyeCX-8-6,eyeCY-8);ctx.lineTo(eyeCX-8+6,eyeCY-11);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(eyeCX+8-6,eyeCY-11);ctx.lineTo(eyeCX+8+6,eyeCY-8);ctx.stroke();
+  }else{
+    // Normal eyebrows
+    ctx.strokeStyle=lk.hairC;ctx.lineWidth=2.5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(eyeCX-8-5,eyeCY-8);ctx.lineTo(eyeCX-8+5,eyeCY-9);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(eyeCX+8-5,eyeCY-9);ctx.lineTo(eyeCX+8+5,eyeCY-8);ctx.stroke();
+  }
+
+  // NOSE (simple, bold)
+  const nw=lk.noseW;
+  ctx.fillStyle=skD;
+  ctx.beginPath();
+  ctx.moveTo(sx+fDir*4,eyeCY+5);
+  ctx.lineTo(sx+fDir*4-4*nw,headCY+hh*0.25);
+  ctx.lineTo(sx+fDir*4+4*nw,headCY+hh*0.25);
+  ctx.closePath();ctx.fill();
+  // Nostrils
+  if(nw>0.9){
+    ctx.fillStyle=skD;
+    ctx.beginPath();ctx.arc(sx+fDir*4-3*nw,headCY+hh*0.24,1.8,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(sx+fDir*4+3*nw,headCY+hh*0.24,1.8,0,Math.PI*2);ctx.fill();
+  }
+
+  // MOUTH (expressive!)
+  const mY=headCY+hh*0.42;
+  if(p.dunking||p.onFire||p.shoving){
+    // SCREAMING — wide open mouth
+    ctx.fillStyle='#000';
+    ctx.beginPath();ctx.ellipse(sx+fDir*4,mY,9,7,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#CC2222';
+    ctx.beginPath();ctx.ellipse(sx+fDir*4,mY+2,6,4,0,0,Math.PI);ctx.fill();
+    // Teeth
+    ctx.fillStyle='#FFF';
+    ctx.fillRect(sx+fDir*4-6,mY-4,12,3);
+  }else if(moving){
+    ctx.strokeStyle=skD;ctx.lineWidth=2;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(sx+fDir*2-5,mY);ctx.lineTo(sx+fDir*2+5,mY-1);ctx.stroke();
+  }else{
+    // Neutral / smile
+    if(pid==='plum'){
+      // Big friendly smile
+      ctx.strokeStyle=skD;ctx.lineWidth=2.5;ctx.lineCap='round';
+      ctx.beginPath();ctx.arc(sx+fDir*3,mY-3,7,0.2,Math.PI-0.2);ctx.stroke();
+    }else{
+      ctx.strokeStyle=skD;ctx.lineWidth=2;ctx.lineCap='round';
+      ctx.beginPath();ctx.arc(sx+fDir*3,mY-2,5,0.15,Math.PI-0.15);ctx.stroke();
+    }
+  }
+
+  // ============ FACIAL HAIR (bold, visible!) ============
+  if(lk.beard==='mustache'){
+    // JORDAN thick mustache
+    ctx.fillStyle=lk.beardC;
+    ctx.beginPath();
+    ctx.moveTo(sx+fDir*4-10,mY-3);
+    ctx.quadraticCurveTo(sx+fDir*4,mY-8,sx+fDir*4+10,mY-3);
+    ctx.quadraticCurveTo(sx+fDir*4,mY-1,sx+fDir*4-10,mY-3);
+    ctx.fill();
+    ctx.strokeStyle='#000';ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(sx+fDir*4-10,mY-3);
+    ctx.quadraticCurveTo(sx+fDir*4,mY-8,sx+fDir*4+10,mY-3);
+    ctx.stroke();
+  }else if(lk.beard==='goatee'){
+    // Slim goatee
+    ctx.fillStyle=lk.beardC;
+    ctx.beginPath();ctx.ellipse(sx+fDir*3,mY+8,5,8,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#000';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.ellipse(sx+fDir*3,mY+8,5,8,0,0,Math.PI*2);ctx.stroke();
+    // Mustache part
+    ctx.fillStyle=lk.beardC;
+    ctx.beginPath();ctx.ellipse(sx+fDir*3,mY-3,7,3,0,0,Math.PI*2);ctx.fill();
+  }else if(lk.beard==='full'){
+    // MASSIVE BEARD (LeBron/Butler) — the signature look
+    ctx.fillStyle=lk.beardC;
+    ctx.beginPath();
+    ctx.moveTo(sx-hw*0.7,headCY+hh*0.15);
+    ctx.quadraticCurveTo(sx-hw*0.75,headCY+hh*0.7,sx,headCY+hh*0.95);
+    ctx.quadraticCurveTo(sx+hw*0.75,headCY+hh*0.7,sx+hw*0.7,headCY+hh*0.15);
+    ctx.fill();
+    // Beard outline
+    ctx.strokeStyle='#000';ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(sx-hw*0.7,headCY+hh*0.15);
+    ctx.quadraticCurveTo(sx-hw*0.75,headCY+hh*0.7,sx,headCY+hh*0.95);
+    ctx.quadraticCurveTo(sx+hw*0.75,headCY+hh*0.7,sx+hw*0.7,headCY+hh*0.15);
+    ctx.stroke();
+    // Texture lines
+    ctx.strokeStyle='#000';ctx.lineWidth=0.8;ctx.globalAlpha=0.3;
+    for(let i=-2;i<=2;i++){
+      ctx.beginPath();ctx.moveTo(sx+i*5,headCY+hh*0.35);
+      ctx.lineTo(sx+i*4,headCY+hh*0.85);ctx.stroke();
+    }
+    ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
+  }
+
+  // ============ CURRY MOUTHGUARD ============
+  if(pid==='curry'){
+    ctx.fillStyle='#00CCFF';
+    ctx.strokeStyle='#000';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.ellipse(sx+fDir*6,mY+3,4,3,fDir*0.3,0,Math.PI*2);ctx.fill();ctx.stroke();
+  }
+
+  // ============ ON FIRE EFFECT ============
+  if(p.onFire){
+    const fl=Math.sin(titleTimer*0.3)*0.2+0.8;
+    ctx.shadowColor='#FF4400';ctx.shadowBlur=25*fl;
+    ctx.strokeStyle=`rgba(255,80,0,${0.6*fl})`;ctx.lineWidth=3;
+    ctx.beginPath();ctx.ellipse(sx,headCY,hw+10,hh+10,0,0,Math.PI*2);ctx.stroke();
+    ctx.strokeStyle=`rgba(255,200,0,${0.4*fl})`;ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(sx,headCY,hw+6,hh+6,0,0,Math.PI*2);ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+
+  // ============ PLAYER INDICATOR ============
+  if(p.controlled&&p.isP1){
+    const arrowY=headCY-hh-20;
+    const bob=Math.sin(titleTimer*0.12)*3;
+    ctx.fillStyle='#00FF44';
+    ctx.strokeStyle='#000';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(sx,arrowY+bob+8);ctx.lineTo(sx-8,arrowY+bob);ctx.lineTo(sx+8,arrowY+bob);ctx.closePath();
+    ctx.fill();ctx.stroke();
+    ctx.strokeStyle='rgba(0,255,68,0.35)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(p.x,p.y+18,20,7,0,0,Math.PI*2);ctx.stroke();
+  }
+
+  // ============ NAME TAG ============
+  ctx.font='bold 10px Arial';ctx.textAlign='center';
+  ctx.strokeStyle='#000';ctx.lineWidth=4;ctx.strokeText(p.stats.name,sx,p.y+36);
+  ctx.fillStyle='#FFF';ctx.fillText(p.stats.name,sx,p.y+36);
+
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+}
+
+// --- Ball on player ---
+function drawBallOnPlayer(p){
+  if(!p.hasBall)return;
+  // Ball position relative to the tiny body
+  const bx=p.x+p.facing*18;
+  const by=p.y-p.z-(p.dunking?38:0);
+  drawBasketball(bx,by,7);
+}
+
+function drawBasketball(x,y,r){
+  ctx.fillStyle='#FF8C00';ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#CC6600';ctx.lineWidth=1;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x-r,y);ctx.lineTo(x+r,y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x,y-r);ctx.lineTo(x,y+r);ctx.stroke();
+}
+
+function drawBall(){
+  if(ball.owner)return;
+  const pp=perspProject(ball.x,ball.y);
+  const sc=pp.scale;
+  ctx.fillStyle='rgba(0,0,0,0.25)';ctx.beginPath();ctx.ellipse(pp.x,pp.y+3*sc,7*sc,3*sc,0,0,Math.PI*2);ctx.fill();
+  drawBasketball(pp.x,pp.y-ball.z*sc,8*sc);
+}
+
+function drawParticles(){
+  for(const pt of particles){
+    const pp=perspProject(pt.x,pt.y);
+    const sc=pp.scale;
+    ctx.globalAlpha=pt.life/pt.maxLife;ctx.fillStyle=pt.color;
+    const sz=pt.size*sc;
+    ctx.fillRect(pp.x-sz/2,pp.y-sz/2,sz,sz);
+  }
+  ctx.globalAlpha=1;
+}
+
+// --- Diorama Background with Parallax Crowd ---
+function drawBackground(){
+  // Dark arena ceiling/upper area
+  ctx.fillStyle='#0E0E22';ctx.fillRect(0,0,W,H);
+
+  // Arena rafters / banners at top
+  const grd=ctx.createLinearGradient(0,0,0,90);
+  grd.addColorStop(0,'#080818');grd.addColorStop(1,'#14142A');
+  ctx.fillStyle=grd;ctx.fillRect(0,0,W,90);
+
+  // Championship banners
+  ctx.fillStyle='rgba(255,215,0,0.15)';
+  for(let i=0;i<5;i++){ctx.fillRect(150+i*140,8,40,28)}
+  ctx.fillStyle='rgba(255,255,255,0.12)';ctx.font='bold 8px Arial';ctx.textAlign='center';
+  for(let i=0;i<5;i++){ctx.fillText('★',170+i*140,27)}
+
+  // Crowd tiers (back to front, smaller to larger for depth)
+  // Tier 3 (far back - small, dim)
+  for(let i=0;i<65;i++){
+    const cx=8+i*14.8+(0)*7;
+    const cy=78;
+    const bounce=Math.sin(titleTimer*0.03+i*0.5)*1;
+    const hue=(i*43+97)%360;
+    ctx.fillStyle=`hsl(${hue},40%,30%)`;
+    ctx.fillRect(cx-2,cy-2+bounce,5,6);
+    ctx.fillStyle=`hsl(25,30%,${35+(i*17)%15}%)`;
+    ctx.beginPath();ctx.arc(cx,cy-5+bounce,3,0,Math.PI*2);ctx.fill();
+  }
+
+  // Tier 2 (middle - medium)
+  for(let i=0;i<58;i++){
+    const cx=6+i*16.6;
+    const cy=98;
+    const bounce=Math.sin(titleTimer*0.04+i*0.6+1)*1.5;
+    const hue=(i*53+137)%360;
+    ctx.fillStyle=`hsl(${hue},50%,38%)`;
+    ctx.fillRect(cx-3,cy-2+bounce,6,8);
+    ctx.fillStyle=`hsl(25,35%,${40+(i*19)%18}%)`;
+    ctx.beginPath();ctx.arc(cx,cy-6+bounce,3.5,0,Math.PI*2);ctx.fill();
+  }
+
+  // Tier 1 (front row - bigger, brighter, animated)
+  for(let i=0;i<50;i++){
+    const cx=15+i*19;
+    const cy=120;
+    const bounce=Math.sin(titleTimer*0.05+i*0.7+2)*2.5;
+    const hue=(i*47+200)%360;
+    ctx.fillStyle=`hsl(${hue},55%,45%)`;
+    ctx.fillRect(cx-3,cy-3+bounce,8,10);
+    ctx.fillStyle=`hsl(25,38%,${42+(i*17)%20}%)`;
+    ctx.beginPath();ctx.arc(cx+1,cy-7+bounce,4.5,0,Math.PI*2);ctx.fill();
+  }
+
+  // Side crowd (left and right, for diorama depth)
+  // These taper in perspective to give the "looking into a box" feel
+  const courtProj=perspProject(COURT.x,COURT.y);
+  const courtProjBot=perspProject(COURT.x,COURT.y+COURT.h);
+
+  // Left side crowd wall
+  const leftGrd=ctx.createLinearGradient(0,courtProj.y,courtProj.x,courtProj.y);
+  leftGrd.addColorStop(0,'#1A1A30');leftGrd.addColorStop(1,'#12122A');
+  ctx.fillStyle=leftGrd;
+  ctx.beginPath();
+  ctx.moveTo(0,90);ctx.lineTo(courtProj.x-10,courtProj.y);
+  ctx.lineTo(courtProjBot.x-10,courtProjBot.y);ctx.lineTo(0,H);ctx.closePath();ctx.fill();
+
+  // Right side crowd wall
+  const courtProjR=perspProject(COURT.x+COURT.w,COURT.y);
+  const courtProjRBot=perspProject(COURT.x+COURT.w,COURT.y+COURT.h);
+  const rightGrd=ctx.createLinearGradient(W,courtProjR.y,courtProjR.x,courtProjR.y);
+  rightGrd.addColorStop(0,'#1A1A30');rightGrd.addColorStop(1,'#12122A');
+  ctx.fillStyle=rightGrd;
+  ctx.beginPath();
+  ctx.moveTo(W,90);ctx.lineTo(courtProjR.x+10,courtProjR.y);
+  ctx.lineTo(courtProjRBot.x+10,courtProjRBot.y);ctx.lineTo(W,H);ctx.closePath();ctx.fill();
+
+  // Side crowd people (left)
+  for(let row=0;row<8;row++){
+    const t=row/7;
+    const cx2=lerp(10,courtProj.x-25,t*0.6);
+    const cy2=lerp(courtProj.y+15,courtProjBot.y-20,t);
+    const sz=lerp(3,5.5,t);
+    const bounce2=Math.sin(titleTimer*0.04+row*1.2)*1.5;
+    const hue2=(row*67+100)%360;
+    ctx.fillStyle=`hsl(${hue2},45%,35%)`;
+    ctx.fillRect(cx2-sz*0.4,cy2-sz*0.3+bounce2,sz*0.8,sz);
+    ctx.fillStyle=`hsl(25,35%,${38+(row*23)%15}%)`;
+    ctx.beginPath();ctx.arc(cx2,cy2-sz*0.6+bounce2,sz*0.5,0,Math.PI*2);ctx.fill();
+  }
+
+  // Side crowd people (right)
+  for(let row=0;row<8;row++){
+    const t=row/7;
+    const cx2=lerp(W-10,courtProjR.x+25,t*0.6);
+    const cy2=lerp(courtProjR.y+15,courtProjRBot.y-20,t);
+    const sz=lerp(3,5.5,t);
+    const bounce2=Math.sin(titleTimer*0.04+row*1.3+3)*1.5;
+    const hue2=(row*73+180)%360;
+    ctx.fillStyle=`hsl(${hue2},45%,35%)`;
+    ctx.fillRect(cx2-sz*0.4,cy2-sz*0.3+bounce2,sz*0.8,sz);
+    ctx.fillStyle=`hsl(25,35%,${38+(row*29)%15}%)`;
+    ctx.beginPath();ctx.arc(cx2,cy2-sz*0.6+bounce2,sz*0.5,0,Math.PI*2);ctx.fill();
+  }
+
+  // Arena lighting glow
+  ctx.fillStyle='rgba(255,220,100,0.04)';
+  ctx.beginPath();ctx.ellipse(W/2,120,350,90,0,0,Math.PI*2);ctx.fill();
+
+  // Court-side floor below court
+  const floorGrd=ctx.createLinearGradient(0,courtProjBot.y,0,H);
+  floorGrd.addColorStop(0,'#2A2A40');floorGrd.addColorStop(1,'#0A0A18');
+  ctx.fillStyle=floorGrd;
+  ctx.fillRect(0,courtProjBot.y,W,H-courtProjBot.y);
+}
+
+// --- HUD ---
+function drawHUD(){
+  // Scoreboard
+  ctx.fillStyle='rgba(0,0,0,0.9)';
+  ctx.fillRect(0,0,W,50);
+  // Gradient accent
+  const grd=ctx.createLinearGradient(0,48,W,48);
+  grd.addColorStop(0,TEAMS[selectedTeamP1].color1);grd.addColorStop(0.5,'#333');grd.addColorStop(1,TEAMS[selectedTeamP2].color1);
+  ctx.fillStyle=grd;ctx.fillRect(0,48,W,3);
+
+  // P1 side
+  ctx.font='bold 18px "Arial Black"';ctx.textAlign='left';
+  ctx.fillStyle=TEAMS[selectedTeamP1].color1;ctx.fillText(TEAMS[selectedTeamP1].abbr,15,32);
+  ctx.fillStyle='#FFF';ctx.font='bold 30px "Arial Black"';ctx.fillText(scoreP1.toString(),90,36);
+  ctx.font='10px Arial';ctx.fillStyle='#888';ctx.fillText('P1',15,15);
+
+  // P2 side
+  ctx.font='bold 18px "Arial Black"';ctx.textAlign='right';
+  ctx.fillStyle=TEAMS[selectedTeamP2].color1;ctx.fillText(TEAMS[selectedTeamP2].abbr,W-15,32);
+  ctx.fillStyle='#FFF';ctx.font='bold 30px "Arial Black"';ctx.fillText(scoreP2.toString(),W-90,36);
+  ctx.font='10px Arial';ctx.fillStyle='#888';ctx.fillText('CPU',W-18,15);
+
+  // Quarter / Time
+  ctx.textAlign='center';ctx.font='bold 12px Arial';ctx.fillStyle='#FFD700';
+  ctx.fillText(quarter<=4?`QTR ${quarter}`:`OT ${quarter-4}`,W/2,14);
+  const secs=Math.ceil(quarterTime/60);
+  const mins=Math.floor(secs/60),s=secs%60;
+  ctx.font='bold 22px "Arial Black"';
+  ctx.fillStyle=secs<=10?'#FF4444':'#FFF';
+  ctx.fillText(`${mins}:${s.toString().padStart(2,'0')}`,W/2,40);
+
+  // Shot clock
+  const shotSecs=Math.ceil(shotClockTimer/60);
+  if(shotSecs<=10&&!possessionLocked){
+    ctx.font='bold 14px Arial';ctx.fillStyle=shotSecs<=5?'#FF2222':'#FFD700';
+    ctx.fillText(shotSecs,W/2+60,40);
+  }
+
+  // Turbo meter
+  const cp=getControlledPlayer();
+  if(cp){
+    const tx=15,ty=H-28,tw=130,th=10;
+    ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(tx-2,ty-2,tw+4,th+4);
+    const turboGrd=ctx.createLinearGradient(tx,0,tx+tw,0);
+    turboGrd.addColorStop(0,'#0088FF');turboGrd.addColorStop(1,'#00DDFF');
+    ctx.fillStyle=cp.turbo>25?turboGrd:'#FF4444';
+    ctx.fillRect(tx,ty,tw*(cp.turbo/100),th);
+    ctx.font='bold 9px Arial';ctx.fillStyle='#FFF';ctx.textAlign='left';
+    ctx.fillText('TURBO [SHIFT]',tx,ty-3);
+  }
+
+  // Fire indicator
+  players.filter(p=>p.onFire).forEach(p=>{
+    const fireX=p.isP1?190:W-190;
+    const fireY=30;
+    ctx.font='bold 11px Arial';ctx.fillStyle='#FF4400';ctx.textAlign='center';
+    ctx.fillText(`${p.stats.name} ON FIRE!`,fireX,fireY);
+  });
+
+  // Announcer
+  if(announcerTimer>0){
+    announcerTimer--;
+    const alpha=announcerTimer<20?announcerTimer/20:1;
+    const scale=announcerTimer>100?1+(110-announcerTimer)*0.02:1;
+    ctx.save();ctx.globalAlpha=alpha;
+    ctx.translate(W/2,H/2-50);ctx.scale(scale,scale);
+    ctx.font='bold 52px "Arial Black"';ctx.textAlign='center';
+    ctx.strokeStyle='#000';ctx.lineWidth=7;ctx.strokeText(announcerText,0,0);
+    ctx.fillStyle='#FFD700';ctx.fillText(announcerText,0,0);
+    ctx.fillStyle='rgba(255,120,0,0.4)';ctx.fillText(announcerText,2,2);
+    ctx.restore();ctx.globalAlpha=1;
+  }
+
+  // Possession lock indicator
+  if(possessionLocked){
+    const ibp=perspProject(W/2,COURT.centerY);
+    ctx.font='bold 16px Arial';ctx.fillStyle='#FFF';ctx.textAlign='center';
+    ctx.globalAlpha=0.6+Math.sin(titleTimer*0.1)*0.3;
+    ctx.fillText('INBOUND',ibp.x,ibp.y);
+    ctx.globalAlpha=1;
+  }
+
+  // Controls
+  ctx.font='9px Arial';ctx.fillStyle='rgba(255,255,255,0.35)';ctx.textAlign='right';
+  ctx.fillText('WASD/Arrows:Move  SHIFT:Turbo  SPACE:Shoot/Shove  X:Pass/Steal  Q:Switch',W-10,H-6);
+}
+
+// ============================================================
+//  SCENES
+// ============================================================
+function updateTitle(){
+  titleTimer++;
+  if(keys['Enter']||keys['Space']){scene='teamselect';cursorTeam=0;keys['Enter']=false;keys['Space']=false;sfxSelect()}
+}
+
+function drawTitle(){
+  ctx.fillStyle='#0A0A2E';ctx.fillRect(0,0,W,H);
+  // Stars
+  for(let i=0;i<60;i++){
+    const x=(i*97+titleTimer*0.3)%W;
+    const y=(i*53+Math.sin(i+titleTimer*0.02)*20)%H;
+    ctx.fillStyle=`rgba(255,255,255,${0.3+Math.sin(titleTimer*0.05+i)*0.3})`;
+    ctx.fillRect(x,y,2,2);
+  }
+  const bounce=Math.sin(titleTimer*0.06)*10;
+  ctx.save();ctx.translate(W/2,190+bounce);
+  // NBA
+  ctx.font='bold 80px "Arial Black"';ctx.textAlign='center';
+  ctx.strokeStyle='#000';ctx.lineWidth=8;ctx.strokeText('NBA',0,0);
+  ctx.fillStyle='#FF4400';ctx.fillText('NBA',0,0);
+  // JAM
+  ctx.font='bold 130px "Arial Black"';
+  ctx.strokeStyle='#000';ctx.lineWidth=10;ctx.strokeText('JAM',0,110);
+  ctx.fillStyle='#FFD700';ctx.fillText('JAM',0,110);
+  ctx.fillStyle='rgba(255,100,0,0.4)';ctx.fillText('JAM',3,113);
+  ctx.restore();
+  // Subtitle
+  ctx.font='bold 18px Arial';ctx.fillStyle='#00CCFF';ctx.textAlign='center';
+  ctx.fillText('T O U R N A M E N T   E D I T I O N',W/2,338+bounce);
+  // Stars subtitle
+  ctx.font='14px Arial';ctx.fillStyle='#FF8844';
+  ctx.fillText('NBA + WNBA ALL-STARS',W/2,365+bounce);
+  // Press start
+  if(Math.floor(titleTimer/30)%2===0){
+    ctx.font='bold 22px Arial';ctx.fillStyle='#FFF';
+    ctx.fillText('PRESS ENTER OR SPACE TO START',W/2,450);
+  }
+  // Fire
+  for(let i=0;i<6;i++){
+    const fx=120+i*150,fy=H-55+Math.sin(titleTimer*0.1+i*2)*12;
+    for(let j=0;j<5;j++){
+      const t=(titleTimer*0.1+j*0.5)%1;ctx.globalAlpha=1-t;
+      ctx.fillStyle=j<2?'#FF4400':j<4?'#FFD700':'#FFF';
+      ctx.beginPath();ctx.arc(fx+Math.sin(t*6+j)*4,fy-t*25,8*(1-t)*0.6,0,Math.PI*2);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+  ctx.font='11px Arial';ctx.fillStyle='rgba(255,255,255,0.25)';ctx.textAlign='center';
+  ctx.fillText('A TRIBUTE TO MIDWAY ARCADE CLASSICS',W/2,H-18);
+}
+
+function updateTeamSelect(){
+  selectTimer++;
+  if(selectPhase===0){
+    if(keys['ArrowLeft']||keys['KeyA']){cursorTeam=(cursorTeam-1+TEAMS.length)%TEAMS.length;keys['ArrowLeft']=false;keys['KeyA']=false;sfxSelect()}
+    if(keys['ArrowRight']||keys['KeyD']){cursorTeam=(cursorTeam+1)%TEAMS.length;keys['ArrowRight']=false;keys['KeyD']=false;sfxSelect()}
+    if(keys['ArrowUp']||keys['KeyW']){cursorTeam=(cursorTeam-4+TEAMS.length)%TEAMS.length;keys['ArrowUp']=false;keys['KeyW']=false;sfxSelect()}
+    if(keys['ArrowDown']||keys['KeyS']){cursorTeam=(cursorTeam+4)%TEAMS.length;keys['ArrowDown']=false;keys['KeyS']=false;sfxSelect()}
+    if(keys['Enter']||keys['Space']){
+      selectedTeamP1=cursorTeam;
+      do{selectedTeamP2=rndInt(0,TEAMS.length-1)}while(selectedTeamP2===selectedTeamP1);
+      selectPhase=1;selectTimer=0;sfxSelect();keys['Enter']=false;keys['Space']=false;
+    }
+  }else if(selectPhase===1&&selectTimer>100){
+    scene='gameplay';selectPhase=0;initGame();
+  }
+}
+
+function drawTeamSelect(){
+  ctx.fillStyle='#0A0A2E';ctx.fillRect(0,0,W,H);
+  ctx.font='bold 34px "Arial Black"';ctx.fillStyle='#FFD700';ctx.textAlign='center';
+  ctx.fillText('SELECT YOUR TEAM',W/2,55);
+
+  const cols=4,rows=2,boxW=185,boxH=105,gap=18;
+  const startX=(W-(cols*(boxW+gap)-gap))/2,startY=85;
+
+  TEAMS.forEach((team,i)=>{
+    const col=i%cols,row=Math.floor(i/cols);
+    const bx=startX+col*(boxW+gap),by=startY+row*(boxH+gap);
+    const sel=i===cursorTeam;
+
+    ctx.fillStyle=sel?team.color1:'rgba(255,255,255,0.08)';
+    roundRect(bx,by,boxW,boxH,5);ctx.fill();
+    if(sel){
+      ctx.strokeStyle='#FFD700';ctx.lineWidth=3;
+      roundRect(bx-2,by-2,boxW+4,boxH+4,6);ctx.stroke();
+      ctx.strokeStyle=`rgba(255,215,0,${0.3+Math.sin(selectTimer*0.1)*0.3})`;ctx.lineWidth=2;
+      roundRect(bx-5,by-5,boxW+10,boxH+10,7);ctx.stroke();
+    }
+    ctx.fillStyle=team.color2;ctx.fillRect(bx+3,by,boxW-6,5);
+    ctx.font='bold 17px "Arial Black"';ctx.fillStyle=sel?'#FFF':'rgba(255,255,255,0.5)';ctx.textAlign='center';
+    ctx.fillText(team.name,bx+boxW/2,by+32);
+    ctx.font='11px Arial';ctx.fillStyle=sel?'rgba(255,255,255,0.85)':'rgba(255,255,255,0.35)';
+    ctx.fillText(team.players[0].name+' + '+team.players[1].name,bx+boxW/2,by+52);
+    // NBA/WNBA tags
+    ctx.font='bold 8px Arial';
+    const tags=['NBA','WNBA'];
+    team.players.forEach((pl,pi)=>{
+      const isWNBA=['CLARK','PARKER','IONESCU','TAURASI','WILSON','OGWUMIKE','STEWART','PLUM'].some(n=>pl.name.includes(n));
+      const tagX=bx+boxW/2+(pi===0?-40:40);
+      ctx.fillStyle=isWNBA?'#FF69B4':'#00BBFF';
+      ctx.fillText(isWNBA?'WNBA':'NBA',tagX,by+65);
+    });
+
+    if(selectPhase===1&&i===selectedTeamP1){
+      ctx.fillStyle='rgba(0,255,0,0.2)';roundRect(bx,by,boxW,boxH,5);ctx.fill();
+      ctx.font='bold 14px Arial';ctx.fillStyle='#0F0';ctx.fillText('P1',bx+boxW/2,by+boxH+16);
+    }
+    if(selectPhase===1&&i===selectedTeamP2){
+      ctx.fillStyle='rgba(255,0,0,0.2)';roundRect(bx,by,boxW,boxH,5);ctx.fill();
+      ctx.font='bold 14px Arial';ctx.fillStyle='#F44';ctx.fillText('CPU',bx+boxW/2,by+boxH+16);
+    }
+  });
+
+  // Preview
+  if(selectPhase===0){
+    const team=TEAMS[cursorTeam],py=395;
+    ctx.fillStyle='rgba(0,0,0,0.6)';roundRect(W/2-290,py,580,170,8);ctx.fill();
+    for(let pi=0;pi<2;pi++){
+      const px=W/2+(pi===0?-140:140);
+      const plr=team.players[pi];
+      ctx.font='bold 15px Arial';ctx.fillStyle=team.color1;ctx.textAlign='center';
+      ctx.fillText(plr.name,px,py+22);
+      const isWNBA=['CLARK','PARKER','IONESCU','TAURASI','WILSON','OGWUMIKE','STEWART','PLUM'].some(n=>plr.name.includes(n));
+      ctx.font='bold 9px Arial';ctx.fillStyle=isWNBA?'#FF69B4':'#00BBFF';
+      ctx.fillText(isWNBA?'WNBA':'NBA',px+60,py+22);
+
+      [{name:'SPD',val:plr.spd},{name:'3PT',val:plr.threePt},{name:'DNK',val:plr.dunk},{name:'DEF',val:plr.def}].forEach((s,si)=>{
+        const sx2=px-55,sy2=py+35+si*26;
+        ctx.font='10px Arial';ctx.fillStyle='#AAA';ctx.textAlign='left';ctx.fillText(s.name,sx2,sy2+9);
+        ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fillRect(sx2+28,sy2,82,10);
+        ctx.fillStyle=s.val>=8?'#0F0':s.val>=5?'#FFD700':'#F44';
+        ctx.fillRect(sx2+28,sy2,82*(s.val/10),10);
+      });
+    }
+  }
+  ctx.font='13px Arial';ctx.fillStyle='rgba(255,255,255,0.45)';ctx.textAlign='center';
+  ctx.fillText('ARROWS to browse  |  ENTER to select',W/2,H-22);
+}
+
+function updateHalftime(){
+  halftimeTimer++;
+  if(halftimeTimer>240||keys['Enter']||keys['Space']){
+    scene='gameplay';quarter=3;quarterTime=QUARTER_LENGTH;shotClockTimer=SHOT_CLOCK;
+    doInbound(scoreP1<=scoreP2);keys['Enter']=false;keys['Space']=false;
+  }
+}
+
+function drawHalftime(){
+  ctx.fillStyle='#0A0A2E';ctx.fillRect(0,0,W,H);
+  ctx.font='bold 52px "Arial Black"';ctx.fillStyle='#FFD700';ctx.textAlign='center';ctx.fillText('HALFTIME',W/2,170);
+  ctx.font='bold 28px "Arial Black"';ctx.fillStyle=TEAMS[selectedTeamP1].color1;ctx.fillText(TEAMS[selectedTeamP1].name,W/2-150,270);
+  ctx.fillStyle='#FFF';ctx.font='bold 60px "Arial Black"';ctx.fillText(scoreP1,W/2-150,340);
+  ctx.font='bold 28px "Arial Black"';ctx.fillStyle='#888';ctx.fillText('VS',W/2,290);
+  ctx.fillStyle=TEAMS[selectedTeamP2].color1;ctx.fillText(TEAMS[selectedTeamP2].name,W/2+150,270);
+  ctx.fillStyle='#FFF';ctx.font='bold 60px "Arial Black"';ctx.fillText(scoreP2,W/2+150,340);
+  if(Math.floor(halftimeTimer/30)%2===0){ctx.font='20px Arial';ctx.fillStyle='#FFF';ctx.fillText('PRESS ENTER TO CONTINUE',W/2,450)}
+}
+
+function updateGameover(){
+  gameoverTimer++;
+  if(gameoverTimer>180&&(keys['Enter']||keys['Space'])){scene='title';gameoverTimer=0;keys['Enter']=false;keys['Space']=false}
+}
+
+function drawGameover(){
+  ctx.fillStyle='#0A0A2E';ctx.fillRect(0,0,W,H);
+  ctx.font='bold 52px "Arial Black"';ctx.fillStyle='#FFD700';ctx.textAlign='center';ctx.fillText('GAME OVER',W/2,140);
+  const won=scoreP1>scoreP2;
+  const winner=won?TEAMS[selectedTeamP1]:TEAMS[selectedTeamP2];
+  ctx.font='bold 34px "Arial Black"';ctx.fillStyle=winner.color1;ctx.fillText(`${winner.name} WINS!`,W/2,220);
+  ctx.font='bold 72px "Arial Black"';ctx.fillStyle='#FFF';
+  ctx.fillText(`${Math.max(scoreP1,scoreP2)} - ${Math.min(scoreP1,scoreP2)}`,W/2,330);
+  ctx.font='bold 28px Arial';ctx.fillStyle=won?'#0F0':'#F44';
+  ctx.fillText(won?'VICTORY!':'DEFEATED',W/2,400);
+  if(gameoverTimer>180&&Math.floor(gameoverTimer/30)%2===0){ctx.font='20px Arial';ctx.fillStyle='#FFF';ctx.fillText('PRESS ENTER TO CONTINUE',W/2,500)}
+}
+
+// ============================================================
+//  MAIN LOOP
+// ============================================================
+function update(){
+  titleTimer++;
+  switch(scene){
+    case'title':updateTitle();break;
+    case'teamselect':updateTeamSelect();break;
+    case'gameplay':
+      updatePlayers();updateBall();updateParticles();
+      if(shakeTimer>0)shakeTimer--;
+      // Quarter clock (only ticks when not in dead-ball)
+      if(!ball.shotInFlight&&!possessionLocked)quarterTime--;
+      // Shot clock
+      if(!possessionLocked&&ball.owner){
+        shotClockTimer--;
+        if(shotClockTimer<=0){
+          // Shot clock violation - turnover
+          announce('SHOT CLOCK!',60);
+          const toP1=!ball.owner.isP1;
+          ball.owner.hasBall=false;ball.owner=null;
+          ball.loose=true;ball.vx=0;ball.vy=0;ball.vz=3;
+          lockPossessionAndInbound(toP1);
+        }
+      }
+      if(quarterTime<=0){
+        if(quarter===2){scene='halftime';halftimeTimer=0;sfxBuzzer();announce('HALFTIME!',120)}
+        else if(quarter>=4){
+          if(scoreP1===scoreP2){quarter++;quarterTime=30*60;shotClockTimer=SHOT_CLOCK;announce('OVERTIME!',120);sfxBuzzer()}
+          else{scene='gameover';gameoverTimer=0;sfxBuzzer()}
+        }else{
+          quarter++;quarterTime=QUARTER_LENGTH;shotClockTimer=SHOT_CLOCK;sfxBuzzer();announce(`QUARTER ${quarter}`,90);
+          doInbound(quarter%2===1);
+        }
+      }
+      break;
+    case'halftime':updateHalftime();break;
+    case'gameover':updateGameover();break;
+  }
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  switch(scene){
+    case'title':drawTitle();break;
+    case'teamselect':drawTeamSelect();break;
+    case'gameplay':
+      ctx.save();
+      if(shakeTimer>0)ctx.translate(rnd(-shakeMag,shakeMag),rnd(-shakeMag,shakeMag));
+      drawBackground();drawCourt();drawBall();
+      [...players].sort((a,b)=>a.y-b.y).forEach(p=>{
+        ctx.save();
+        const pp=perspProject(p.x,p.y);
+        const sc=pp.scale;
+        ctx.translate(pp.x,pp.y);ctx.scale(sc,sc);ctx.translate(-p.x,-p.y);
+        drawPlayer(p);drawBallOnPlayer(p);
+        ctx.restore();
+      });
+      drawParticles();
+      ctx.restore();drawHUD();
+      break;
+    case'halftime':drawHalftime();break;
+    case'gameover':drawGameover();break;
+  }
+}
+
+function gameLoop(){update();draw();requestAnimationFrame(gameLoop)}
+gameLoop();
+</script>
+</body>
+</html>
