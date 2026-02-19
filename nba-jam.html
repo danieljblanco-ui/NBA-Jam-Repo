@@ -249,6 +249,167 @@ function rnd(a,b){return a+Math.random()*(b-a)}
 function rndInt(a,b){return Math.floor(rnd(a,b+1))}
 function pick(arr){return arr[rndInt(0,arr.length-1)]}
 
+// ============================================================
+//  ANIMATION ENGINE — Multi-frame keyframed phase system
+// ============================================================
+function easeInOutQuad(t){return t<0.5?2*t*t:-1+(4-2*t)*t}
+function easeOutBack(t){const c=1.7;return 1+c*Math.pow(t-1,3)+c*Math.pow(t-1,2)}
+
+function interpKF(keyframes,frame){
+  if(frame<=keyframes[0].f)return{...keyframes[0]};
+  if(frame>=keyframes[keyframes.length-1].f)return{...keyframes[keyframes.length-1]};
+  for(let i=0;i<keyframes.length-1;i++){
+    const k0=keyframes[i],k1=keyframes[i+1];
+    if(k0.f<=frame&&frame<=k1.f){
+      const t=easeInOutQuad((frame-k0.f)/(k1.f-k0.f));
+      const r={f:frame};
+      for(const key of Object.keys(k0)){if(key!=='f')r[key]=lerp(k0[key],k1[key],t)}
+      return r;
+    }
+  }
+  return{...keyframes[keyframes.length-1]};
+}
+
+const ANIM={
+  DUNK:{
+    phases:['CROUCH','RISE','HANG','SLAM','LAND'],
+    dur:[8,14,10,10,18],// total=60 frames=1sec
+    z:[{f:0,v:0},{f:8,v:-6},{f:10,v:8},{f:22,v:52},{f:32,v:55},{f:42,v:30},{f:50,v:5},{f:60,v:0}],
+    scY:[{f:0,v:1},{f:6,v:0.72},{f:8,v:0.72},{f:12,v:1.22},{f:22,v:1.25},{f:32,v:1.18},{f:42,v:0.78},{f:50,v:0.85},{f:60,v:1}],
+    scX:[{f:0,v:1},{f:6,v:1.15},{f:8,v:1.15},{f:12,v:0.82},{f:22,v:0.78},{f:32,v:0.85},{f:42,v:1.2},{f:50,v:1.1},{f:60,v:1}],
+    ballRelease:42,// frame when ball gets slammed through hoop
+    particles:[{f:8,type:'launch',n:10},{f:42,type:'slam',n:25},{f:50,type:'land',n:15}],
+    shake:[{lo:42,hi:50,mag:12},{lo:50,hi:56,mag:5}]
+  },
+  JUMP_SHOT:{
+    phases:['GATHER','RISE','HANG','RELEASE','LAND'],
+    dur:[6,10,14,6,14],// total=50 frames=0.83sec
+    z:[{f:0,v:0},{f:6,v:2},{f:16,v:34},{f:30,v:38},{f:36,v:32},{f:50,v:0}],
+    scY:[{f:0,v:1},{f:4,v:0.88},{f:6,v:0.88},{f:16,v:1.18},{f:30,v:1.22},{f:36,v:1.12},{f:50,v:1}],
+    scX:[{f:0,v:1},{f:4,v:1.08},{f:6,v:1.08},{f:16,v:0.88},{f:30,v:0.84},{f:36,v:0.9},{f:50,v:1}],
+    ballRelease:30,// frame when shot releases (end of HANG)
+    particles:[{f:30,type:'release',n:6}],
+    shake:[]
+  },
+  BLOCK:{
+    phases:['LEAP','SWAT','LAND'],
+    dur:[8,8,12],// total=28
+    z:[{f:0,v:0},{f:4,v:5},{f:8,v:38},{f:16,v:34},{f:28,v:0}],
+    scY:[{f:0,v:0.9},{f:4,v:0.85},{f:8,v:1.25},{f:16,v:1.2},{f:22,v:0.82},{f:28,v:1}],
+    scX:[{f:0,v:1.05},{f:4,v:1.1},{f:8,v:0.82},{f:16,v:0.85},{f:22,v:1.15},{f:28,v:1}],
+    ballRelease:-1,
+    particles:[{f:10,type:'swat',n:12}],
+    shake:[{lo:8,hi:12,mag:4}]
+  },
+  SHOVE:{
+    phases:['WINDUP','STRIKE','FOLLOW','RECOVER'],
+    dur:[5,5,8,8],// total=26
+    z:[{f:0,v:0},{f:5,v:0},{f:10,v:3},{f:18,v:1},{f:26,v:0}],
+    scY:[{f:0,v:1},{f:5,v:0.92},{f:10,v:1.05},{f:18,v:1},{f:26,v:1}],
+    scX:[{f:0,v:1},{f:5,v:1.1},{f:10,v:1.18},{f:18,v:1.05},{f:26,v:1}],
+    ballRelease:-1,
+    particles:[{f:10,type:'impact',n:8}],
+    shake:[{lo:9,hi:13,mag:5}]
+  }
+};
+
+function startAnim(p,type){
+  const def=ANIM[type];if(!def)return;
+  p.anim={type,def,phase:def.phases[0],pi:0,fip:0,fc:0,
+    total:def.dur.reduce((a,b)=>a+b,0),
+    startX:p.x,startY:p.y,released:false};
+}
+
+function updateAnim(p){
+  const a=p.anim;if(!a||!a.type)return false;
+  a.fc++;a.fip++;
+  const def=a.def;
+  // Phase advance
+  if(a.fip>=def.dur[a.pi]){
+    a.pi++;a.fip=0;
+    if(a.pi>=def.phases.length){endAnim(p);return false}
+    a.phase=def.phases[a.pi];
+  }
+  // Z from curve
+  const zv=interpKF(def.z,a.fc);
+  p.z=Math.max(0,zv.v);p.vz=0;
+  // Body scale
+  const sy=interpKF(def.scY,a.fc);
+  const sx=interpKF(def.scX,a.fc);
+  p.animScY=sy.v;p.animScX=sx.v;
+  // Dunk: move toward hoop
+  if(a.type==='DUNK'){
+    const t=a.fc/a.total;
+    const moveT=Math.min(t*1.3,1);// arrive early
+    p.x=lerp(a.startX,p.dunkTarget.x,moveT);
+    p.y=lerp(a.startY,p.dunkTarget.y,moveT);
+    if(a.fc>=def.ballRelease&&!a.released&&p.hasBall){a.released=true;performDunk(p)}
+  }
+  // Jump shot: release ball
+  if(a.type==='JUMP_SHOT'){
+    if(a.fc>=def.ballRelease&&!a.released&&p.hasBall){a.released=true;releaseShot(p)}
+  }
+  // Shove: check hit on STRIKE frame
+  if(a.type==='SHOVE'&&a.phase==='STRIKE'&&a.fip===1){
+    shoveHitCheck(p);
+  }
+  // Particles
+  for(const pe of def.particles){
+    if(a.fc===pe.f)spawnAnimParticles(p,pe);
+  }
+  // Screen shake
+  for(const sh of def.shake){
+    if(a.fc>=sh.lo&&a.fc<=sh.hi){shakeTimer=Math.max(shakeTimer,3);shakeMag=Math.max(shakeMag,sh.mag)}
+  }
+  // Backward compat flags
+  p.dunking=(a.type==='DUNK');
+  p.shooting=(a.type==='JUMP_SHOT');
+  p.shoving=(a.type==='SHOVE');
+  p.blocking=(a.type==='BLOCK');
+  return true;// signal: skip normal physics
+}
+
+function endAnim(p){
+  p.anim=null;p.dunking=false;p.shooting=false;p.shoving=false;p.blocking=false;
+  p.z=Math.max(p.z,0);p.vz=0;p.animScY=1;p.animScX=1;
+}
+
+function shoveHitCheck(p){
+  for(const other of players){
+    if(other.isP1===p.isP1)continue;
+    if(dist(p,other)<50){
+      other.stumble=35;
+      other.vx=(other.x-p.x)*0.18;other.vy=(other.y-p.y)*0.18;
+      if(other.hasBall){
+        other.hasBall=false;ball.owner=null;ball.loose=true;
+        ball.vx=other.vx*2+rnd(-2,2);ball.vy=other.vy*2+rnd(-2,2);ball.vz=rnd(2,5);
+        ball.x=other.x;ball.y=other.y;ball.z=15;
+        announce(pick(['REJECTED!','GET THAT OUTTA HERE!','NOT IN MY HOUSE!']),60);
+      }
+      spawnHitParticles(other.x,other.y);
+      break;
+    }
+  }
+}
+
+function spawnAnimParticles(p,pe){
+  const px=p.x,py=p.y-p.z-20;
+  if(pe.type==='launch'){
+    for(let i=0;i<pe.n;i++)particles.push({x:px+rnd(-12,12),y:p.y+10,vx:rnd(-3,3),vy:rnd(-1,2),life:20,maxLife:20,color:`hsl(${rnd(40,60)},100%,60%)`,size:rnd(4,9)});
+  }else if(pe.type==='slam'){
+    const hx=p.dunkTarget?p.dunkTarget.x:px,hy=p.dunkTarget?p.dunkTarget.y:py;
+    for(let i=0;i<pe.n;i++)particles.push({x:hx+rnd(-25,25),y:hy+rnd(-15,15),vx:rnd(-7,7),vy:rnd(-4,2),life:rnd(25,45),maxLife:45,color:`hsl(${rnd(0,40)},100%,50%)`,size:rnd(5,14)});
+  }else if(pe.type==='land'){
+    for(let i=0;i<pe.n;i++)particles.push({x:px+rnd(-20,20),y:p.y+15,vx:rnd(-4,4),vy:rnd(-1,1),life:18,maxLife:18,color:'rgba(255,255,255,0.6)',size:rnd(3,7)});
+  }else if(pe.type==='release'){
+    for(let i=0;i<pe.n;i++)particles.push({x:px+p.facing*12,y:py-10,vx:p.facing*rnd(1,3),vy:rnd(-2,0),life:12,maxLife:12,color:'#FFF',size:rnd(2,4)});
+  }else if(pe.type==='swat'){
+    for(let i=0;i<pe.n;i++)particles.push({x:px+rnd(-10,10),y:py+rnd(-10,10),vx:rnd(-5,5),vy:rnd(-3,3),life:18,maxLife:18,color:'#FF4444',size:rnd(4,8)});
+  }else if(pe.type==='impact'){
+    spawnHitParticles(px,py);
+  }
+}
+
 // --- Player ---
 function createPlayer(teamIdx,playerIdx,team,isP1,slot){
   const p=team.players[playerIdx];
@@ -269,6 +430,7 @@ function createPlayer(teamIdx,playerIdx,team,isP1,slot){
     stumble:0,
     controlled:false,
     aiTimer:0,aiState:'idle',aiDecisionTimer:0,aiTargetX:0,aiTargetY:0,
+    anim:null,animScY:1,animScX:1,blocking:false,
     animFrame:0,animTimer:0,
     flashTimer:0,
     width:36,height:48,
@@ -312,16 +474,16 @@ function isThreePoint(p){return dist(p,getTargetHoop(p))>COURT.threeLineR}
 
 // --- Shooting ---
 function attemptShot(p){
-  if(!p.hasBall||p.shooting||p.dunking||p.z>0||possessionLocked)return;
+  if(!p.hasBall||p.shooting||p.dunking||p.z>0||possessionLocked||p.anim)return;
   const hoop=getTargetHoop(p);
   if(isInDunkRange(p)&&p.stats.dunk>=5&&dist(p,hoop)<100){
-    p.dunking=true;p.dunkTimer=45;
     p.dunkTarget={x:hoop.x,y:hoop.y};
-    p.dunkStartX=p.x;p.dunkStartY=p.y;
-    p.vz=9;sfxDunk();
+    startAnim(p,'DUNK');
+    sfxDunk();
     announce(pick(['BOOMSHAKALAKA!','MONSTER JAM!','THROWS IT DOWN!','SLAM DUNK!','KABOOM!','OH MY!']),90);
   }else{
-    p.shooting=true;p.shootTimer=22;p.vz=5.5;sfxShoot();
+    startAnim(p,'JUMP_SHOT');
+    sfxShoot();
   }
 }
 
@@ -468,7 +630,7 @@ function updateBall(){
     ball.y=clamp(ball.y,COURT.y+10,COURT.y+COURT.h-10);
     // Pickup
     for(const p of players){
-      if(p.stumble>0||p.dunking||p.shooting)continue;
+      if(p.stumble>0||p.dunking||p.shooting||p.anim)continue;
       if(dist(p,ball)<32&&ball.z<28){
         p.hasBall=true;ball.owner=p;ball.loose=false;ball.shotInFlight=false;
         shotClockTimer=SHOT_CLOCK;
@@ -493,24 +655,10 @@ function passBall(p){
 
 // --- Shove ---
 function doShove(p){
-  if(p.shoveCooldown>0||possessionLocked)return;
-  p.shoveCooldown=35;p.shoving=true;
-  setTimeout(()=>{p.shoving=false},200);sfxShove();
-  for(const other of players){
-    if(other.isP1===p.isP1)continue;
-    if(dist(p,other)<50){
-      other.stumble=35;
-      other.vx=(other.x-p.x)*0.18;other.vy=(other.y-p.y)*0.18;
-      if(other.hasBall){
-        other.hasBall=false;ball.owner=null;ball.loose=true;
-        ball.vx=other.vx*2+rnd(-2,2);ball.vy=other.vy*2+rnd(-2,2);ball.vz=rnd(2,5);
-        ball.x=other.x;ball.y=other.y;ball.z=15;
-        announce(pick(['REJECTED!','GET THAT OUTTA HERE!','NOT IN MY HOUSE!']),60);
-      }
-      spawnHitParticles(other.x,other.y);shakeTimer=6;shakeMag=4;
-      break;
-    }
-  }
+  if(p.shoveCooldown>0||possessionLocked||p.anim)return;
+  p.shoveCooldown=35;
+  startAnim(p,'SHOVE');
+  sfxShove();
 }
 
 // --- Steal ---
@@ -540,7 +688,7 @@ function doSteal(p){
 // ============================================================
 function updateAI(p){
   p.aiTimer++;
-  if(p.stumble>0||p.dunking||p.shooting||possessionLocked)return;
+  if(p.stumble>0||p.dunking||p.shooting||p.anim||possessionLocked)return;
   const myTeamHasBall=getTeamWithBall()===(p.isP1?'p1':'p2');
   const hoop=getTargetHoop(p);
   const spd=p.speed*(p.turboActive?1.5:1)*(p.onFire?1.12:1);
@@ -647,28 +795,24 @@ function updatePlayers(){
     if(p.shoveCooldown>0)p.shoveCooldown--;
     if(p.stealCooldown>0)p.stealCooldown--;
 
-    // Jump
+    // Animation system (overrides old dunk/shoot/shove timers)
+    if(p.anim){
+      const animActive=updateAnim(p);
+      if(animActive&&(p.anim&&(p.anim.type==='DUNK'||p.anim.type==='JUMP_SHOT'||p.anim.type==='BLOCK'))){
+        // Run cycle still updates for visual
+        if(Math.abs(p.vx)>0.5||Math.abs(p.vy)>0.5){p.runCycle+=0.2}
+        continue;// skip normal physics for these
+      }
+    }
+
+    // Jump (only when not in animation)
     if(p.z>0||p.vz>0){p.z+=p.vz;p.vz-=0.42;if(p.z<=0){p.z=0;p.vz=0}}
 
     // Run cycle
     if(Math.abs(p.vx)>0.5||Math.abs(p.vy)>0.5){p.runCycle+=0.2}
 
-    // Dunk
-    if(p.dunking){
-      p.dunkTimer--;
-      const t=1-p.dunkTimer/45;
-      p.x=lerp(p.dunkStartX,p.dunkTarget.x,Math.min(t*1.2,1));
-      p.y=lerp(p.dunkStartY,p.dunkTarget.y,Math.min(t*1.1,1));
-      if(p.dunkTimer<=6&&p.hasBall)performDunk(p);
-      if(p.dunkTimer<=0){p.dunking=false;p.z=Math.max(p.z,0)}
-      continue;
-    }
-
-    // Shoot release
-    if(p.shooting){p.shootTimer--;if(p.shootTimer<=0)releaseShot(p);continue}
-
     // Player-controlled
-    if(p.controlled&&p.isP1&&p.stumble<=0&&!possessionLocked){
+    if(p.controlled&&p.isP1&&p.stumble<=0&&!possessionLocked&&!p.anim){
       let mx=0,my=0;
       if(keys['ArrowLeft']||keys['KeyA'])mx=-1;
       if(keys['ArrowRight']||keys['KeyD'])mx=1;
@@ -877,63 +1021,168 @@ function drawPlayer(p){
     ctx.fillStyle=fill;ctx.fillRect(x,y,w,h);
   }
 
-  // ============ BODY ============
-  const torsoTop=sy-10; const torsoH=16; const torsoW=22;
-  const legTop=sy+5; const legLen=10;
+  // ============ BODY (with squash/stretch) ============
+  const bScY=p.animScY||1, bScX=p.animScX||1;
+  const torsoTop=sy-10*bScY; const torsoH=16*bScY; const torsoW=22*bScX;
+  const legTop=sy+5; const legLen=10*bScY;
+  const aPhase=p.anim?p.anim.phase:null;
+  const aType=p.anim?p.anim.type:null;
+  const aFip=p.anim?p.anim.fip:0;// frame in phase
+  const aFc=p.anim?p.anim.fc:0;// total frame counter
 
-  // LEGS (with outline)
-  const lL=moving?legPhase*6:0, rL=moving?-legPhase*6:0;
-  oRect(sx-7,legTop+4,6,legLen+lL,sk); // left leg
-  oRect(sx+1,legTop+4,6,legLen+rL,sk); // right leg
+  // LEGS — spread wide on LAND/CROUCH, tight on RISE/HANG
+  let legSpread=0;
+  if(aPhase==='CROUCH'||aPhase==='LAND'||aPhase==='GATHER')legSpread=4*bScX;
+  else if(aPhase==='RISE'||aPhase==='HANG')legSpread=-2;
+  const lL=moving&&!aType?legPhase*6:0, rL=moving&&!aType?-legPhase*6:0;
+  oRect(sx-7-legSpread,legTop+4,6,legLen+lL,sk);
+  oRect(sx+1+legSpread,legTop+4,6,legLen+rL,sk);
   // Shoes
-  oRoundRect(sx-9,legTop+4+legLen+lL,9,5,2,shoeC);
-  oRoundRect(sx-1,legTop+4+legLen+rL,9,5,2,shoeC);
-  // White sole
+  oRoundRect(sx-9-legSpread,legTop+4+legLen+lL,9,5,2,shoeC);
+  oRoundRect(sx-1+legSpread,legTop+4+legLen+rL,9,5,2,shoeC);
   ctx.fillStyle='#FFF';
-  ctx.fillRect(sx-8,legTop+7+legLen+lL,7,2);
-  ctx.fillRect(sx,legTop+7+legLen+rL,7,2);
+  ctx.fillRect(sx-8-legSpread,legTop+7+legLen+lL,7,2);
+  ctx.fillRect(sx+legSpread,legTop+7+legLen+rL,7,2);
 
   // SHORTS
   oRoundRect(sx-torsoW/2+1,torsoTop+torsoH-4,torsoW-2,10,3,c1);
-  // Stripe on shorts
   ctx.fillStyle=c2;ctx.fillRect(sx-torsoW/2+3,torsoTop+torsoH+3,torsoW-6,2);
 
   // TORSO (jersey)
   oRoundRect(sx-torsoW/2,torsoTop,torsoW,torsoH,4,c1);
-  // Jersey trim
   ctx.fillStyle=c2;
-  ctx.fillRect(sx-torsoW/2+1,torsoTop+1,torsoW-2,3); // collar
-  // Jersey number
+  ctx.fillRect(sx-torsoW/2+1,torsoTop+1,torsoW-2,3);
   ctx.fillStyle='#FFF';ctx.font='bold 10px Arial';ctx.textAlign='center';
   ctx.strokeStyle=c2;ctx.lineWidth=1.5;
   ctx.strokeText(p.stats.num,sx,torsoTop+13);
   ctx.fillText(p.stats.num,sx,torsoTop+13);
 
-  // ARMS (rounded, with hands!)
+  // ============ ARMS (phase-aware!) ============
   const armTop=torsoTop+3;const armW=7;const armLen=12;
-  if(p.dunking){
-    // Arms up — SLAM pose
-    oRect(sx-torsoW/2-armW+1,torsoTop-14,armW,16,sk);
-    oRect(sx+torsoW/2-1,torsoTop-14,armW,16,sk);
-    // Fists
-    oEllipse(sx-torsoW/2-armW/2+1,torsoTop-16,5,5,sk);
-    oEllipse(sx+torsoW/2+armW/2-1,torsoTop-16,5,5,sk);
-  }else if(p.shoving){
-    // Shove arm forward
-    oRect(sx+fDir*(torsoW/2),armTop,fDir*18,armW,sk);
-    // Fist
-    oEllipse(sx+fDir*(torsoW/2+18),armTop+armW/2,5,5,sk);
-    oRect(sx-fDir*(torsoW/2+armW),armTop+1,armW,armLen-3,sk);
+  if(aType==='DUNK'){
+    // DUNK arm phases
+    if(aPhase==='CROUCH'){
+      // Pulled back low, fists clenched
+      oRect(sx-torsoW/2-armW-2,armTop+6,armW,armLen-2,sk);
+      oRect(sx+torsoW/2+2,armTop+6,armW,armLen-2,sk);
+      oEllipse(sx-torsoW/2-armW/2-2,armTop+armLen+4,5,5,sk);
+      oEllipse(sx+torsoW/2+armW/2+2,armTop+armLen+4,5,5,sk);
+    }else if(aPhase==='RISE'){
+      // Arms sweeping upward explosively
+      const ext=Math.min(aFip/14,1);
+      const armY=lerp(armTop,torsoTop-20,ext);
+      oRect(sx-torsoW/2-armW,armY,armW,16,sk);
+      oRect(sx+torsoW/2,armY,armW,16,sk);
+      oEllipse(sx-torsoW/2-armW/2,armY-2,5,5,sk);
+      oEllipse(sx+torsoW/2+armW/2,armY-2,5,5,sk);
+    }else if(aPhase==='HANG'){
+      // Arms overhead, ball cocked back — dramatic pause
+      const sway=Math.sin(aFip*0.5)*2;
+      oRect(sx-12+sway,torsoTop-22,armW,18,sk);
+      oRect(sx+6-sway,torsoTop-22,armW,18,sk);
+      oEllipse(sx-12+armW/2+sway,torsoTop-24,5,5,sk);
+      oEllipse(sx+6+armW/2-sway,torsoTop-24,5,5,sk);
+    }else if(aPhase==='SLAM'){
+      // Arms DRIVING DOWN — the slam!
+      const slamT=Math.min(aFip/10,1);
+      const armY=lerp(torsoTop-22,torsoTop+4,easeInOutQuad(slamT));
+      oRect(sx-10,armY,armW,armLen,sk);
+      oRect(sx+4,armY,armW,armLen,sk);
+      oEllipse(sx-10+armW/2,armY+armLen,6,6,sk);
+      oEllipse(sx+4+armW/2,armY+armLen,6,6,sk);
+    }else if(aPhase==='LAND'){
+      // Arms wide, knees bent impact
+      const recT=Math.min(aFip/18,1);
+      const armSpread=lerp(18,8,recT);
+      oRect(sx-torsoW/2-armSpread,armTop+2,armW,armLen-2,sk);
+      oRect(sx+torsoW/2+armSpread-armW,armTop+2,armW,armLen-2,sk);
+      oEllipse(sx-torsoW/2-armSpread+armW/2,armTop+armLen,4,4,sk);
+      oEllipse(sx+torsoW/2+armSpread-armW/2,armTop+armLen,4,4,sk);
+    }
+  }else if(aType==='JUMP_SHOT'){
+    // JUMP SHOT arm phases
+    if(aPhase==='GATHER'){
+      // Ball pulled to chest
+      oRect(sx+fDir*3,armTop-2,armW,armLen,sk);
+      oRect(sx-fDir*8,armTop,armW,armLen-2,sk);
+    }else if(aPhase==='RISE'){
+      // Shooting form developing — ball rising
+      const ext=Math.min(aFip/10,1);
+      const guideY=lerp(armTop,armTop-12,ext);
+      oRect(sx+fDir*6,guideY,armW,armLen+2,sk);
+      oRect(sx-fDir*6,armTop-4*ext,armW,armLen,sk);
+      oEllipse(sx+fDir*10,guideY-2,4,4,sk);
+    }else if(aPhase==='HANG'){
+      // Classic shooting form at peak — dramatic freeze
+      const sway=Math.sin(aFip*0.3)*1;
+      oRect(sx+fDir*7,torsoTop-16+sway,armW,armLen+6,sk);
+      oRect(sx-fDir*5,armTop-6,armW-1,armLen,sk);
+      oEllipse(sx+fDir*11,torsoTop-18+sway,4,4,sk);
+      // Shooting hand detail
+      oEllipse(sx+fDir*10,torsoTop-20+sway,3,3,sk);
+    }else if(aPhase==='RELEASE'){
+      // Follow-through — arm extended, wrist flicked
+      oRect(sx+fDir*8,torsoTop-20,armW,armLen+8,sk);
+      oRect(sx-fDir*5,armTop-4,armW-1,armLen,sk);
+      // Flicked wrist
+      oEllipse(sx+fDir*12,torsoTop-22,4,4,sk);
+      oEllipse(sx+fDir*14,torsoTop-24,3,3,sk);
+    }else if(aPhase==='LAND'){
+      const recT=Math.min(aFip/14,1);
+      const armY=lerp(torsoTop-10,armTop+2,recT);
+      oRect(sx+fDir*5,armY,armW,armLen-2,sk);
+      oRect(sx-fDir*6,armTop+recT*3,armW,armLen-2,sk);
+    }
+  }else if(aType==='SHOVE'){
+    // SHOVE arm phases
+    if(aPhase==='WINDUP'){
+      oRect(sx-fDir*(torsoW/2+10),armTop+2,armW,armLen-2,sk);
+      oRect(sx+fDir*2,armTop+1,armW,armLen-2,sk);
+    }else if(aPhase==='STRIKE'){
+      oRect(sx+fDir*(torsoW/2),armTop-2,fDir*22,armW+2,sk);
+      oEllipse(sx+fDir*(torsoW/2+22),armTop+armW/2-1,6,6,sk);
+      oRect(sx-fDir*(torsoW/2+armW),armTop+1,armW,armLen-3,sk);
+    }else if(aPhase==='FOLLOW'){
+      const recT=Math.min(aFip/8,1);
+      const ext=lerp(22,14,recT);
+      oRect(sx+fDir*(torsoW/2),armTop,fDir*ext,armW,sk);
+      oEllipse(sx+fDir*(torsoW/2+ext),armTop+armW/2,5,5,sk);
+      oRect(sx-fDir*(torsoW/2+armW),armTop+1,armW,armLen-3,sk);
+    }else if(aPhase==='RECOVER'){
+      const recT=Math.min(aFip/8,1);
+      const sw=moving?Math.sin(p.runCycle)*3:0;
+      oRect(sx-torsoW/2-armW,armTop+sw*recT,armW,armLen,sk);
+      oRect(sx+torsoW/2,armTop-sw*recT,armW,armLen,sk);
+    }
+  }else if(aType==='BLOCK'){
+    if(aPhase==='LEAP'){
+      const ext=Math.min(aFip/8,1);
+      const armY=lerp(armTop,torsoTop-18,ext);
+      oRect(sx-13,armY,armW,armLen+ext*8,sk);
+      oRect(sx+7,armY,armW,armLen+ext*8,sk);
+      // Open hands (not fists)
+      oEllipse(sx-13+armW/2,armY-2,5,6,sk);
+      oEllipse(sx+7+armW/2,armY-2,5,6,sk);
+    }else if(aPhase==='SWAT'){
+      // Full extension — giant swat hands
+      oRect(sx-14,torsoTop-24,armW,armLen+12,sk);
+      oRect(sx+8,torsoTop-24,armW,armLen+12,sk);
+      oEllipse(sx-14+armW/2,torsoTop-28,6,7,sk);
+      oEllipse(sx+8+armW/2,torsoTop-28,6,7,sk);
+    }else if(aPhase==='LAND'){
+      const recT=Math.min(aFip/12,1);
+      const armY=lerp(torsoTop-12,armTop+2,recT);
+      oRect(sx-12,armY,armW,armLen,sk);
+      oRect(sx+6,armY,armW,armLen,sk);
+    }
   }else if(p.hasBall){
     oRect(sx+fDir*(torsoW/2),armTop,fDir*10,armW,sk);
     oRect(sx-fDir*(torsoW/2+armW),armTop+1,armW,armLen-2,sk);
-    // Hand
     oEllipse(sx+fDir*(torsoW/2+10),armTop+armW/2,4,4,sk);
   }else{
     const sw=moving?Math.sin(p.runCycle)*5:0;
     oRect(sx-torsoW/2-armW,armTop+sw,armW,armLen,sk);
     oRect(sx+torsoW/2,armTop-sw,armW,armLen,sk);
-    // Hands
     oEllipse(sx-torsoW/2-armW/2,armTop+sw+armLen,4,4,sk);
     oEllipse(sx+torsoW/2+armW/2,armTop-sw+armLen,4,4,sk);
   }
@@ -1141,8 +1390,8 @@ function drawPlayer(p){
   ctx.beginPath();ctx.arc(eyeCX-8+fDir*1,eyeCY-2,2,0,Math.PI*2);ctx.fill();
   ctx.beginPath();ctx.arc(eyeCX+8+fDir*1,eyeCY-2,2,0,Math.PI*2);ctx.fill();
 
-  // Angry eyes when dunking/shoving
-  if(p.dunking||p.shoving){
+  // Angry eyes when dunking/shoving/blocking/shooting peak
+  if(p.dunking||p.shoving||p.blocking||(aType==='JUMP_SHOT'&&(aPhase==='HANG'||aPhase==='RELEASE'))){
     ctx.strokeStyle='#000';ctx.lineWidth=3;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(eyeCX-8-6,eyeCY-8);ctx.lineTo(eyeCX-8+6,eyeCY-11);ctx.stroke();
     ctx.beginPath();ctx.moveTo(eyeCX+8-6,eyeCY-11);ctx.lineTo(eyeCX+8+6,eyeCY-8);ctx.stroke();
@@ -1170,7 +1419,7 @@ function drawPlayer(p){
 
   // MOUTH (expressive!)
   const mY=headCY+hh*0.42;
-  if(p.dunking||p.onFire||p.shoving){
+  if(p.dunking||p.onFire||p.shoving||p.blocking||(aType==='JUMP_SHOT'&&aPhase==='HANG')){
     // SCREAMING — wide open mouth
     ctx.fillStyle='#000';
     ctx.beginPath();ctx.ellipse(sx+fDir*4,mY,9,7,0,0,Math.PI*2);ctx.fill();
@@ -1291,9 +1540,24 @@ function roundRect(x,y,w,h,r){
 // --- Ball on player ---
 function drawBallOnPlayer(p){
   if(!p.hasBall)return;
-  // Ball position relative to the tiny body
-  const bx=p.x+p.facing*18;
-  const by=p.y-p.z-(p.dunking?38:0);
+  const a=p.anim;
+  let bx=p.x+p.facing*18;
+  let by=p.y-p.z;
+  if(a&&a.type==='DUNK'){
+    // Ball rises with arms through phases
+    const ph=a.phase;
+    if(ph==='CROUCH'){by-=8;bx=p.x}
+    else if(ph==='RISE'){by-=28;bx=p.x}
+    else if(ph==='HANG'){by-=42;bx=p.x+Math.sin(a.fip*0.5)*2}
+    else if(ph==='SLAM'){by-=lerp(42,10,Math.min(a.fip/10,1));bx=p.x}
+    else{by-=38}
+  }else if(a&&a.type==='JUMP_SHOT'){
+    const ph=a.phase;
+    if(ph==='GATHER'){by-=10;bx=p.x+p.facing*6}
+    else if(ph==='RISE'){by-=22;bx=p.x+p.facing*10}
+    else if(ph==='HANG'){by-=30;bx=p.x+p.facing*12}
+    else{by-=20}
+  }else if(p.dunking){by-=38}
   drawBasketball(bx,by,7);
 }
 
