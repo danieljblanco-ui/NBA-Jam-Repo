@@ -1034,12 +1034,21 @@ function updatePlayers(){
       // --- PASS / STEAL (X/C) ---
       if(keys['KeyX']||keys['KeyC']){
         if(p.hasBall&&!p.anim){passBall(p)}
-        else if(!p.hasBall){doSteal(p)}
+        else if(!p.hasBall&&!p.anim){doSteal(p)}
         keys['KeyX']=false;keys['KeyC']=false;
       }
       // --- SHOVE (Space without ball) ---
       if((keys['Space']||keys['KeyZ'])&&!p.hasBall&&p.z===0){doShove(p);keys['Space']=false;keys['KeyZ']=false}
       // --- SWITCH PLAYER ---
+      if(keys['KeyQ']||keys['Tab']){switchControlledPlayer();keys['KeyQ']=false;keys['Tab']=false}
+    }
+    // --- PASS / STEAL / SWITCH also work during animations ---
+    else if(p.controlled&&p.isP1&&p.stumble<=0&&!possessionLocked){
+      // Player has an animation playing — still allow pass, steal, switch
+      if(keys['KeyX']||keys['KeyC']){
+        if(p.hasBall){passBall(p);if(p.anim)endAnim(p)}
+        keys['KeyX']=false;keys['KeyC']=false;
+      }
       if(keys['KeyQ']||keys['Tab']){switchControlledPlayer();keys['KeyQ']=false;keys['Tab']=false}
     }else if(!p.isP1||!p.controlled){
       updateAI(p);
@@ -2624,7 +2633,75 @@ function draw(){
   }
 }
 
-function gameLoop(){update();draw();requestAnimationFrame(gameLoop)}
+// ============================================================
+//  BULLET TIME — fast gameplay with dramatic slowdown on key moments
+// ============================================================
+const GAME_SPEED_NORMAL=2.0;     // 2x speed for fast arcade feel
+const GAME_SPEED_SLOMOSHOT=0.35; // dramatic slowdown for shots/dunks
+const GAME_SPEED_SLOMOSTEAL=0.5; // slightly faster slowdown for steals
+let gameSpeed=GAME_SPEED_NORMAL;
+let targetGameSpeed=GAME_SPEED_NORMAL;
+let gameSpeedAccum=0;
+let bulletTimeVignette=0; // visual darkening effect 0-1
+
+function isBulletTimeMoment(){
+  for(const p of players){
+    if(!p.anim)continue;
+    const t=p.anim.type;
+    // Shots: slow during HANG and RELEASE
+    if(t==='JUMP_SHOT'&&(p.anim.phase==='HANG'||p.anim.phase==='RELEASE'))
+      return{speed:GAME_SPEED_SLOMOSHOT,label:'JUMP SHOT'};
+    // Dunks: slow during HANG and SLAM (the dramatic part)
+    if((t==='DUNK'||t==='DUNK_EXTENDED')&&(p.anim.phase==='HANG'||p.anim.phase==='SLAM'))
+      return{speed:GAME_SPEED_SLOMOSHOT,label:'SLAM DUNK'};
+    // Also slow during RISE for dunks (building anticipation)
+    if((t==='DUNK'||t==='DUNK_EXTENDED')&&p.anim.phase==='RISE'&&p.anim.fip>5)
+      return{speed:0.6,label:null};
+    // Steals: slow during REACH and SWIPE
+    if(t==='STEAL'&&(p.anim.phase==='REACH'||p.anim.phase==='SWIPE'))
+      return{speed:GAME_SPEED_SLOMOSTEAL,label:'STEAL'};
+  }
+  return null;
+}
+
+function gameLoop(){
+  // Determine target speed
+  const btMoment=scene==='gameplay'?isBulletTimeMoment():null;
+  targetGameSpeed=btMoment?btMoment.speed:GAME_SPEED_NORMAL;
+
+  // Smooth speed transitions (snappy enter, smooth exit)
+  if(gameSpeed>targetGameSpeed){
+    gameSpeed=Math.max(targetGameSpeed,gameSpeed-0.15); // quick slowdown
+  }else{
+    gameSpeed=Math.min(targetGameSpeed,gameSpeed+0.04); // gradual speed-up
+  }
+
+  // Vignette effect intensity
+  const targetVig=btMoment?0.35:0;
+  bulletTimeVignette+=(targetVig-bulletTimeVignette)*0.12;
+
+  // Accumulator-based sub-stepping
+  gameSpeedAccum+=gameSpeed;
+  while(gameSpeedAccum>=1){
+    update();
+    gameSpeedAccum-=1;
+  }
+
+  draw();
+
+  // Draw bullet-time vignette overlay
+  if(bulletTimeVignette>0.01&&scene==='gameplay'){
+    ctx.save();
+    const grad=ctx.createRadialGradient(W/2,H/2,W*0.25,W/2,H/2,W*0.7);
+    grad.addColorStop(0,`rgba(0,0,0,0)`);
+    grad.addColorStop(1,`rgba(0,0,20,${bulletTimeVignette})`);
+    ctx.fillStyle=grad;
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  }
+
+  requestAnimationFrame(gameLoop);
+}
 gameLoop();
 </script>
 </body>
