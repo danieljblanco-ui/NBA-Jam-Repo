@@ -340,6 +340,16 @@ const ANIM={
     ballRelease:-1,
     particles:[{f:12,type:'impact',n:15}],
     shake:[{lo:11,hi:16,mag:10}]
+  },
+  STEAL:{
+    phases:['CROUCH','REACH','SWIPE','RECOVER'],
+    dur:[6,8,10,12],// total=36 — very visible reaching lunge
+    z:[{f:0,v:0},{f:6,v:0},{f:14,v:3},{f:24,v:1},{f:36,v:0}],
+    scY:[{f:0,v:1},{f:4,v:0.65},{f:6,v:0.6},{f:14,v:0.75},{f:24,v:0.85},{f:36,v:1}],
+    scX:[{f:0,v:1},{f:4,v:1.2},{f:6,v:1.35},{f:14,v:1.4},{f:24,v:1.15},{f:36,v:1}],
+    ballRelease:-1,
+    particles:[{f:10,type:'swipe',n:10}],
+    shake:[]
   }
 };
 
@@ -383,6 +393,10 @@ function updateAnim(p){
   if(a.type==='SHOVE'&&a.phase==='STRIKE'&&a.fip===1){
     shoveHitCheck(p);
   }
+  // Steal: check hit during SWIPE phase
+  if(a.type==='STEAL'&&a.phase==='SWIPE'&&a.fip===1){
+    stealHitCheck(p);
+  }
   // Particles
   for(const pe of def.particles){
     if(a.fc===pe.f)spawnAnimParticles(p,pe);
@@ -396,11 +410,12 @@ function updateAnim(p){
   p.shooting=(a.type==='JUMP_SHOT');
   p.shoving=(a.type==='SHOVE');
   p.blocking=(a.type==='BLOCK');
+  p.stealing=(a.type==='STEAL');
   return true;// signal: skip normal physics
 }
 
 function endAnim(p){
-  p.anim=null;p.dunking=false;p.shooting=false;p.shoving=false;p.blocking=false;
+  p.anim=null;p.dunking=false;p.shooting=false;p.shoving=false;p.blocking=false;p.stealing=false;
   p.z=Math.max(p.z,0);p.vz=0;p.animScY=1;p.animScX=1;
 }
 
@@ -444,6 +459,12 @@ function spawnAnimParticles(p,pe){
     for(let i=0;i<pe.n;i++)particles.push({x:px+rnd(-15,15),y:py+rnd(-15,15),vx:rnd(-8,8),vy:rnd(-6,4),life:22,maxLife:22,color:`hsl(${rnd(0,20)},100%,50%)`,size:rnd(6,14)});
   }else if(pe.type==='impact'){
     spawnHitParticles(px,py);
+  }else if(pe.type==='swipe'){
+    // Steal swipe — horizontal streak particles
+    for(let i=0;i<pe.n;i++)particles.push({x:px+p.facing*rnd(10,30),y:py+rnd(-5,15),vx:p.facing*rnd(4,10),vy:rnd(-2,2),life:14,maxLife:14,color:`hsl(${rnd(180,220)},80%,65%)`,size:rnd(4,9)});
+  }else if(pe.type==='hang'){
+    // Extended dunk hang fire trail
+    for(let i=0;i<pe.n;i++)particles.push({x:px+rnd(-15,15),y:py+rnd(-5,10),vx:rnd(-3,3),vy:rnd(1,4),life:20,maxLife:20,color:`hsl(${rnd(15,45)},100%,${rnd(50,70)}%)`,size:rnd(5,12)});
   }
 }
 
@@ -534,11 +555,16 @@ function attemptShot(p){
 function attemptDunk(p){
   if(!p.hasBall||p.shooting||p.dunking||p.z>0||possessionLocked||p.anim)return;
   const hoop=getTargetHoop(p);
-  if(isInDunkRange(p)&&p.stats.dunk>=5&&dist(p,hoop)<110){
+  const d=dist(p,hoop);
+  if(d<160&&p.stats.dunk>=3){
+    // Extended dunk with long hang time
     p.dunkTarget={x:hoop.x,y:hoop.y};
     startAnim(p,'DUNK_EXTENDED');
     sfxDunk();
-    announce(pick(['BOOMSHAKALAKA!','MONSTER JAM!','THROWS IT DOWN!','SLAM DUNK!','KABOOM!','OH MY!']),90);
+    announce(pick(['BOOMSHAKALAKA!','MONSTER JAM!','THROWS IT DOWN!','SLAM DUNK!','KABOOM!','OH MY!','SPECTACULAR!']),90);
+  }else if(d<200){
+    // Too far for dunk — do regular shot instead
+    attemptShot(p);
   }
 }
 
@@ -792,12 +818,14 @@ function doShove(p){
 
 // --- Steal ---
 function doSteal(p){
-  if(p.stealCooldown>0||possessionLocked)return;
-  p.stealCooldown=25;p.stealing=true;
-  setTimeout(()=>{p.stealing=false},150);
+  if(p.stealCooldown>0||possessionLocked||p.anim)return;
+  p.stealCooldown=30;p.stealing=true;
+  startAnim(p,'STEAL');
+}
+function stealHitCheck(p){
   for(const other of players){
     if(other.isP1===p.isP1)continue;
-    if(dist(p,other)<48&&other.hasBall){
+    if(dist(p,other)<55&&other.hasBall){
       const chance=p.stats.def*9+(p.turboActive?15:0);
       if(rnd(0,100)<chance){
         other.hasBall=false;ball.owner=null;ball.loose=true;
@@ -980,15 +1008,38 @@ function updatePlayers(){
         p.facing=mx>0?1:mx<0?-1:p.facing;
       }else{p.vx*=0.7;p.vy*=0.7}
 
+      // --- SHOOT / DUNK (Space/Z) ---
       if((keys['Space']||keys['KeyZ'])&&p.hasBall&&p.z===0){
         const now=performance.now();
-        if(now-p.lastSpaceTime<300){attemptDunk(p);p.lastSpaceTime=0}
-        else{p.lastSpaceTime=now;attemptShot(p)}
+        if(now-p.lastSpaceTime<350){
+          // Double-tap detected — cancel pending shot, attempt dunk
+          if(p._shotPending){clearTimeout(p._shotPending);p._shotPending=null}
+          if(p.anim&&p.anim.type==='JUMP_SHOT'&&p.anim.fc<15){endAnim(p)} // cancel early jump shot
+          if(!p.anim)attemptDunk(p);
+          p.lastSpaceTime=0;
+        }else{
+          // First tap — buffer for 350ms to check for double-tap
+          p.lastSpaceTime=now;
+          const pendingTime=now;
+          p._shotPending=setTimeout(()=>{
+            // Only fire if still the same tap sequence and no dunk happened
+            if(p.lastSpaceTime===pendingTime&&!p.anim&&p.hasBall&&p.z===0){
+              attemptShot(p);
+            }
+            p._shotPending=null;
+          },360);
+        }
         keys['Space']=false;keys['KeyZ']=false;
       }
-      if((keys['KeyX']||keys['KeyC'])&&p.hasBall){passBall(p);keys['KeyX']=false;keys['KeyC']=false}
+      // --- PASS / STEAL (X/C) ---
+      if(keys['KeyX']||keys['KeyC']){
+        if(p.hasBall&&!p.anim){passBall(p)}
+        else if(!p.hasBall){doSteal(p)}
+        keys['KeyX']=false;keys['KeyC']=false;
+      }
+      // --- SHOVE (Space without ball) ---
       if((keys['Space']||keys['KeyZ'])&&!p.hasBall&&p.z===0){doShove(p);keys['Space']=false;keys['KeyZ']=false}
-      if((keys['KeyX']||keys['KeyC'])&&!p.hasBall){doSteal(p);keys['KeyX']=false;keys['KeyC']=false}
+      // --- SWITCH PLAYER ---
       if(keys['KeyQ']||keys['Tab']){switchControlledPlayer();keys['KeyQ']=false;keys['Tab']=false}
     }else if(!p.isP1||!p.controlled){
       updateAI(p);
@@ -1305,211 +1356,310 @@ function drawPlayer(p){
     ctx.fillStyle=fill;ctx.fillRect(x,y,w,h);
   }
 
-  // ============ BODY (with squash/stretch) ============
+  // ============ BODY (with squash/stretch) — REALISTIC BUILD ============
   const bScY=p.animScY||1, bScX=p.animScX||1;
-  const torsoTop=sy-10*bScY; const torsoH=16*bScY; const torsoW=22*bScX;
-  const legTop=sy+5; const legLen=10*bScY;
   const aPhase=p.anim?p.anim.phase:null;
   const aType=p.anim?p.anim.type:null;
-  const aFip=p.anim?p.anim.fip:0;// frame in phase
-  const aFc=p.anim?p.anim.fc:0;// total frame counter
+  const aFip=p.anim?p.anim.fip:0;
+  const aFc=p.anim?p.anim.fc:0;
 
-  // LEGS — spread wide on LAND/CROUCH, tight on RISE/HANG
-  let legSpread=0;
-  if(aPhase==='CROUCH'||aPhase==='LAND'||aPhase==='GATHER')legSpread=4*bScX;
-  else if(aPhase==='RISE'||aPhase==='HANG')legSpread=-2;
-  const lL=moving&&!aType?legPhase*6:0, rL=moving&&!aType?-legPhase*6:0;
-  oRect(sx-7-legSpread,legTop+4,6,legLen+lL,sk);
-  oRect(sx+1+legSpread,legTop+4,6,legLen+rL,sk);
-  // Shoes (with sole and lace detail)
-  oRoundRect(sx-9-legSpread,legTop+4+legLen+lL,9,5,2,shoeC);
-  oRoundRect(sx-1+legSpread,legTop+4+legLen+rL,9,5,2,shoeC);
-  // White swoosh/stripe
-  ctx.fillStyle='#FFF';
-  ctx.fillRect(sx-8-legSpread,legTop+6+legLen+lL,7,2);
-  ctx.fillRect(sx+legSpread,legTop+6+legLen+rL,7,2);
-  // Sole (darker)
-  ctx.fillStyle='rgba(0,0,0,0.4)';
-  ctx.fillRect(sx-9-legSpread,legTop+8+legLen+lL,9,2);
-  ctx.fillRect(sx-1+legSpread,legTop+8+legLen+rL,9,2);
-  // Laces
-  ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=0.6;
-  for(let lc=0;lc<2;lc++){
-    const ly=legTop+4+legLen+lL+lc*2;
-    ctx.beginPath();ctx.moveTo(sx-7-legSpread,ly);ctx.lineTo(sx-4-legSpread,ly);ctx.stroke();
-    const ry=legTop+4+legLen+rL+lc*2;
-    ctx.beginPath();ctx.moveTo(sx+1+legSpread,ry);ctx.lineTo(sx+4+legSpread,ry);ctx.stroke();
+  // Body dimensions — athletic NBA build
+  const shoulderW=28*bScX;
+  const waistW=20*bScX;
+  const torsoTop=sy-14*bScY;
+  const torsoH=22*bScY;
+  const hipY=torsoTop+torsoH;
+  const upperArmW=7*bScX, forearmW=6*bScX;
+  const upperArmLen=12*bScY, forearmLen=11*bScY;
+  const armTop=torsoTop+3;
+  const thighW=8*bScX, calfW=6*bScX;
+  const thighLen=12*bScY, calfLen=10*bScY;
+
+  // Helper: draw default relaxed arms (upper + forearm + hand)
+  function drawDefaultArms(ax,aTop,sw,uaW,faW,uaL,faL,swing,skC,skLC){
+    // Left arm
+    oRect(ax-sw/2-uaW,aTop+swing,uaW,uaL,skC);
+    oRect(ax-sw/2-faW,aTop+swing+uaL,faW,faL,skC);
+    oEllipse(ax-sw/2-faW/2,aTop+swing+uaL+faL,4,4,skC);
+    // Right arm
+    oRect(ax+sw/2,aTop-swing,uaW,uaL,skC);
+    oRect(ax+sw/2+1,aTop-swing+uaL,faW,faL,skC);
+    oEllipse(ax+sw/2+faW/2+1,aTop-swing+uaL+faL,4,4,skC);
+    // Muscle highlight
+    ctx.fillStyle=skLC;ctx.globalAlpha=0.18;
+    ctx.beginPath();ctx.ellipse(ax-sw/2-uaW/2,aTop+swing+uaL*0.4,3,5,0,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.ellipse(ax+sw/2+uaW/2,aTop-swing+uaL*0.4,3,5,0,0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
   }
 
-  // SHORTS
-  oRoundRect(sx-torsoW/2+1,torsoTop+torsoH-4,torsoW-2,10,3,c1);
-  ctx.fillStyle=c2;ctx.fillRect(sx-torsoW/2+3,torsoTop+torsoH+3,torsoW-6,2);
+  // LEGS — thigh + calf with knee bend
+  let legSpread=0;
+  if(aPhase==='CROUCH'||aPhase==='LAND'||aPhase==='GATHER')legSpread=5*bScX;
+  else if(aPhase==='RISE'||aPhase==='HANG')legSpread=-2;
+  const lL=moving&&!aType?legPhase*5:0, rL=moving&&!aType?-legPhase*5:0;
 
-  // TORSO (jersey with V-neck and rim lighting)
-  oRoundRect(sx-torsoW/2,torsoTop,torsoW,torsoH,4,c1);
-  // Collar stripe
+  // Left thigh
+  oRect(sx-8-legSpread,hipY+1,thighW,thighLen+lL*0.5,sk);
+  // Left calf
+  oRect(sx-7-legSpread,hipY+1+thighLen+lL*0.5,calfW,calfLen+lL*0.5,sk);
+  // Left knee highlight
+  ctx.fillStyle=skL;ctx.globalAlpha=0.2;
+  ctx.beginPath();ctx.ellipse(sx-4-legSpread,hipY+1+thighLen+lL*0.5,3,2,0,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
+  // Right thigh
+  oRect(sx+legSpread,hipY+1,thighW,thighLen+rL*0.5,sk);
+  // Right calf
+  oRect(sx+1+legSpread,hipY+1+thighLen+rL*0.5,calfW,calfLen+rL*0.5,sk);
+  // Right knee highlight
+  ctx.fillStyle=skL;ctx.globalAlpha=0.2;
+  ctx.beginPath();ctx.ellipse(sx+4+legSpread,hipY+1+thighLen+rL*0.5,3,2,0,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
+
+  // SHOES — high-tops
+  const lShoeY=hipY+1+thighLen+lL*0.5+calfLen+lL*0.5;
+  const rShoeY=hipY+1+thighLen+rL*0.5+calfLen+rL*0.5;
+  oRect(sx-8-legSpread,lShoeY-3,thighW,4,shoeC);
+  oRect(sx+legSpread,rShoeY-3,thighW,4,shoeC);
+  oRoundRect(sx-9-legSpread,lShoeY,thighW+2,6,2,shoeC);
+  oRoundRect(sx-1+legSpread,rShoeY,thighW+2,6,2,shoeC);
+  ctx.fillStyle='#FFF';
+  ctx.fillRect(sx-7-legSpread,lShoeY+2,thighW-2,2);
+  ctx.fillRect(sx+1+legSpread,rShoeY+2,thighW-2,2);
+  ctx.fillStyle=c1;
+  ctx.fillRect(sx-9-legSpread,lShoeY+5,thighW+2,2);
+  ctx.fillRect(sx-1+legSpread,rShoeY+5,thighW+2,2);
+
+  // SHORTS — baggy
+  oRoundRect(sx-shoulderW/2-1,hipY-3,shoulderW+2,14*bScY,4,c1);
+  ctx.fillStyle=c2;ctx.fillRect(sx-shoulderW/2+2,hipY+8*bScY,shoulderW-4,2);
+
+  // JERSEY TORSO — trapezoidal (broad shoulders, tapered waist)
+  ctx.fillStyle='#000';
+  ctx.beginPath();
+  ctx.moveTo(sx-shoulderW/2-OL,torsoTop-OL);
+  ctx.lineTo(sx+shoulderW/2+OL,torsoTop-OL);
+  ctx.lineTo(sx+waistW/2+OL,hipY+OL);
+  ctx.lineTo(sx-waistW/2-OL,hipY+OL);
+  ctx.closePath();ctx.fill();
+  ctx.fillStyle=c1;
+  ctx.beginPath();
+  ctx.moveTo(sx-shoulderW/2,torsoTop);
+  ctx.lineTo(sx+shoulderW/2,torsoTop);
+  ctx.lineTo(sx+waistW/2,hipY);
+  ctx.lineTo(sx-waistW/2,hipY);
+  ctx.closePath();ctx.fill();
+  // V-neck
   ctx.fillStyle=c2;
-  ctx.fillRect(sx-torsoW/2+1,torsoTop+1,torsoW-2,3);
-  // V-neck collar
-  ctx.fillStyle=sk;
-  ctx.beginPath();ctx.moveTo(sx-5,torsoTop-2);ctx.lineTo(sx,torsoTop+6);ctx.lineTo(sx+5,torsoTop-2);ctx.closePath();ctx.fill();
-  ctx.strokeStyle=c2;ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(sx-5,torsoTop-1);ctx.lineTo(sx,torsoTop+6);ctx.lineTo(sx+5,torsoTop-1);ctx.stroke();
-  // Jersey side seam
-  ctx.strokeStyle='rgba(0,0,0,0.15)';ctx.lineWidth=0.8;
-  ctx.beginPath();ctx.moveTo(sx-torsoW/2+2,torsoTop+3);ctx.lineTo(sx-torsoW/2+2,torsoTop+torsoH-2);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(sx+torsoW/2-2,torsoTop+3);ctx.lineTo(sx+torsoW/2-2,torsoTop+torsoH-2);ctx.stroke();
-  // Number
-  ctx.fillStyle='#FFF';ctx.font='bold 10px Arial';ctx.textAlign='center';
-  ctx.strokeStyle=c2;ctx.lineWidth=1.5;
-  ctx.strokeText(p.stats.num,sx,torsoTop+13);
-  ctx.fillText(p.stats.num,sx,torsoTop+13);
-  // Rim lighting (bright edge on one side simulating arena side-light)
-  ctx.fillStyle='rgba(255,240,200,0.12)';
-  ctx.fillRect(sx+torsoW/2-3,torsoTop+1,3,torsoH-2);
+  ctx.beginPath();ctx.moveTo(sx-7,torsoTop);ctx.lineTo(sx,torsoTop+9);ctx.lineTo(sx+7,torsoTop);ctx.closePath();ctx.fill();
+  // Collar stripe
+  ctx.fillStyle=c2;ctx.fillRect(sx-shoulderW/2,torsoTop,shoulderW,3);
+  // Side seams
+  ctx.strokeStyle='#000';ctx.lineWidth=0.5;ctx.globalAlpha=0.15;
+  ctx.beginPath();ctx.moveTo(sx-shoulderW/2+3,torsoTop+3);ctx.lineTo(sx-waistW/2+3,hipY);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(sx+shoulderW/2-3,torsoTop+3);ctx.lineTo(sx+waistW/2-3,hipY);ctx.stroke();
+  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
+  // Jersey number
+  ctx.font=`bold ${Math.max(9,12*bScY)}px Arial`;ctx.textAlign='center';
+  ctx.fillStyle=c2;ctx.fillText(p.stats.number,sx,torsoTop+torsoH-3);
+  // Rim lighting
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  ctx.fillRect(sx+shoulderW/2-4,torsoTop+2,3,torsoH-2);
+  // Shoulder caps
+  oEllipse(sx-shoulderW/2,torsoTop+4,6*bScX,5*bScY,c1);
+  oEllipse(sx+shoulderW/2,torsoTop+4,6*bScX,5*bScY,c1);
 
-  // ============ ARMS (phase-aware!) ============
-  const armTop=torsoTop+3;const armW=7;const armLen=12;
-  if(aType==='DUNK'){
-    // DUNK arm phases
+  // ============ ARMS (upper arm + forearm + hand) ============
+  const armLen=upperArmLen+forearmLen;
+  const torsoW=shoulderW;
+
+  if(aType==='DUNK'||aType==='DUNK_EXTENDED'){
     if(aPhase==='CROUCH'){
-      // Pulled back low, fists clenched
-      oRect(sx-torsoW/2-armW-2,armTop+6,armW,armLen-2,sk);
-      oRect(sx+torsoW/2+2,armTop+6,armW,armLen-2,sk);
-      oEllipse(sx-torsoW/2-armW/2-2,armTop+armLen+4,5,5,sk);
-      oEllipse(sx+torsoW/2+armW/2+2,armTop+armLen+4,5,5,sk);
+      oRect(sx-shoulderW/2-upperArmW,armTop+4,upperArmW,upperArmLen,sk);
+      oRect(sx-shoulderW/2-forearmW,armTop+4+upperArmLen,forearmW,forearmLen-4,sk);
+      oRect(sx+shoulderW/2,armTop+4,upperArmW,upperArmLen,sk);
+      oRect(sx+shoulderW/2+1,armTop+4+upperArmLen,forearmW,forearmLen-4,sk);
     }else if(aPhase==='RISE'){
-      // Arms sweeping upward explosively
-      const ext=Math.min(aFip/14,1);
-      const armY=lerp(armTop,torsoTop-20,ext);
-      oRect(sx-torsoW/2-armW,armY,armW,16,sk);
-      oRect(sx+torsoW/2,armY,armW,16,sk);
-      oEllipse(sx-torsoW/2-armW/2,armY-2,5,5,sk);
-      oEllipse(sx+torsoW/2+armW/2,armY-2,5,5,sk);
+      const ext=Math.min(aFip/12,1);
+      const armY=lerp(armTop,torsoTop-18,ext);
+      oRect(sx-12,armY,upperArmW,upperArmLen+ext*5,sk);
+      oRect(sx-11,armY-forearmLen*ext,forearmW,forearmLen*ext+2,sk);
+      oRect(sx+5,armY,upperArmW,upperArmLen+ext*5,sk);
+      oRect(sx+6,armY-forearmLen*ext,forearmW,forearmLen*ext+2,sk);
+      oEllipse(sx-8,armY-forearmLen*ext,5*ext+2,5*ext+2,sk);
+      oEllipse(sx+9,armY-forearmLen*ext,5*ext+2,5*ext+2,sk);
     }else if(aPhase==='HANG'){
-      // Arms overhead, ball cocked back — dramatic pause
-      const sway=Math.sin(aFip*0.5)*2;
-      oRect(sx-12+sway,torsoTop-22,armW,18,sk);
-      oRect(sx+6-sway,torsoTop-22,armW,18,sk);
-      oEllipse(sx-12+armW/2+sway,torsoTop-24,5,5,sk);
-      oEllipse(sx+6+armW/2-sway,torsoTop-24,5,5,sk);
+      oRect(sx-11,torsoTop-28,upperArmW,upperArmLen+10,sk);
+      oRect(sx-10,torsoTop-28-forearmLen+4,forearmW,forearmLen,sk);
+      oRect(sx+4,torsoTop-28,upperArmW,upperArmLen+10,sk);
+      oRect(sx+5,torsoTop-28-forearmLen+4,forearmW,forearmLen,sk);
+      oEllipse(sx-8,torsoTop-32,7,8,sk);
+      oEllipse(sx+8,torsoTop-32,7,8,sk);
     }else if(aPhase==='SLAM'){
-      // Arms DRIVING DOWN — the slam!
-      const slamT=Math.min(aFip/10,1);
-      const armY=lerp(torsoTop-22,torsoTop+4,easeInOutQuad(slamT));
-      oRect(sx-10,armY,armW,armLen,sk);
-      oRect(sx+4,armY,armW,armLen,sk);
-      oEllipse(sx-10+armW/2,armY+armLen,6,6,sk);
-      oEllipse(sx+4+armW/2,armY+armLen,6,6,sk);
-    }else if(aPhase==='LAND'){
-      // Arms wide, knees bent impact
-      const recT=Math.min(aFip/18,1);
-      const armSpread=lerp(18,8,recT);
-      oRect(sx-torsoW/2-armSpread,armTop+2,armW,armLen-2,sk);
-      oRect(sx+torsoW/2+armSpread-armW,armTop+2,armW,armLen-2,sk);
-      oEllipse(sx-torsoW/2-armSpread+armW/2,armTop+armLen,4,4,sk);
-      oEllipse(sx+torsoW/2+armSpread-armW/2,armTop+armLen,4,4,sk);
+      const slamT=Math.min(aFip/12,1);
+      const armY=lerp(torsoTop-28,torsoTop-6,slamT);
+      oRect(sx-9,armY,upperArmW,upperArmLen+8,sk);
+      oRect(sx+2,armY,upperArmW,upperArmLen+8,sk);
+      oEllipse(sx-6,armY-2,7,7,sk);
+      oEllipse(sx+6,armY-2,7,7,sk);
+    }else{
+      const sw=moving?Math.sin(p.runCycle)*3:0;
+      drawDefaultArms(sx,armTop,shoulderW,upperArmW,forearmW,upperArmLen,forearmLen,sw,sk,skL);
     }
   }else if(aType==='JUMP_SHOT'){
-    // JUMP SHOT arm phases
     if(aPhase==='GATHER'){
-      // Ball pulled to chest
-      oRect(sx+fDir*3,armTop-2,armW,armLen,sk);
-      oRect(sx-fDir*8,armTop,armW,armLen-2,sk);
+      oRect(sx+fDir*(shoulderW/2),armTop,fDir*14,upperArmW,sk);
+      oEllipse(sx+fDir*(shoulderW/2+14),armTop+upperArmW/2,5,5,sk);
+      oRect(sx-fDir*(shoulderW/2+upperArmW),armTop+2,upperArmW,upperArmLen,sk);
+      oRect(sx-fDir*(shoulderW/2+forearmW),armTop+2+upperArmLen,forearmW,forearmLen-4,sk);
     }else if(aPhase==='RISE'){
-      // Shooting form developing — ball rising
       const ext=Math.min(aFip/10,1);
-      const guideY=lerp(armTop,armTop-12,ext);
-      oRect(sx+fDir*6,guideY,armW,armLen+2,sk);
-      oRect(sx-fDir*6,armTop-4*ext,armW,armLen,sk);
-      oEllipse(sx+fDir*10,guideY-2,4,4,sk);
+      const upY=lerp(armTop,torsoTop-20,ext);
+      oRect(sx+fDir*(shoulderW/2-3),upY,upperArmW,-(upperArmLen+ext*6),sk);
+      oRect(sx+fDir*(shoulderW/2-2),upY-(upperArmLen+ext*6),forearmW,-(forearmLen*ext),sk);
+      oEllipse(sx+fDir*(shoulderW/2),upY-(upperArmLen+ext*6+forearmLen*ext),5,5,sk);
+      oRect(sx-fDir*(shoulderW/2+upperArmW),armTop+1,upperArmW,upperArmLen,sk);
     }else if(aPhase==='HANG'){
-      // Classic shooting form at peak — dramatic freeze
-      const sway=Math.sin(aFip*0.3)*1;
-      oRect(sx+fDir*7,torsoTop-16+sway,armW,armLen+6,sk);
-      oRect(sx-fDir*5,armTop-6,armW-1,armLen,sk);
-      oEllipse(sx+fDir*11,torsoTop-18+sway,4,4,sk);
-      // Shooting hand detail
-      oEllipse(sx+fDir*10,torsoTop-20+sway,3,3,sk);
+      oRect(sx+fDir*5,torsoTop-12,upperArmW,-upperArmLen-6,sk);
+      oRect(sx+fDir*5+1,torsoTop-12-upperArmLen-6,forearmW,-forearmLen,sk);
+      oEllipse(sx+fDir*6,torsoTop-12-upperArmLen-forearmLen-8,6,6,sk);
+      oRect(sx-fDir*7,torsoTop-16,upperArmW,upperArmLen+4,sk);
+      oRect(sx-fDir*6,torsoTop-16+upperArmLen,forearmW,6,sk);
     }else if(aPhase==='RELEASE'){
-      // Follow-through — arm extended, wrist flicked
-      oRect(sx+fDir*8,torsoTop-20,armW,armLen+8,sk);
-      oRect(sx-fDir*5,armTop-4,armW-1,armLen,sk);
-      // Flicked wrist
-      oEllipse(sx+fDir*12,torsoTop-22,4,4,sk);
-      oEllipse(sx+fDir*14,torsoTop-24,3,3,sk);
+      const flickT=Math.min(aFip/6,1);
+      oRect(sx+fDir*6,lerp(torsoTop-30,torsoTop-24,flickT),upperArmW,upperArmLen+8,sk);
+      const handX=sx+fDir*(10+flickT*12);
+      const handY=torsoTop-28+flickT*8;
+      oEllipse(handX,handY,5+flickT*2,5,sk);
+      oRect(sx-fDir*6,torsoTop-10+flickT*4,upperArmW,upperArmLen,sk);
+      oRect(sx-fDir*5,torsoTop-10+flickT*4+upperArmLen,forearmW,forearmLen-4,sk);
     }else if(aPhase==='LAND'){
-      const recT=Math.min(aFip/14,1);
-      const armY=lerp(torsoTop-10,armTop+2,recT);
-      oRect(sx+fDir*5,armY,armW,armLen-2,sk);
-      oRect(sx-fDir*6,armTop+recT*3,armW,armLen-2,sk);
+      const recT=Math.min(aFip/10,1);
+      const armY=lerp(torsoTop-14,armTop,recT);
+      oRect(sx+fDir*5,armY,upperArmW,upperArmLen+4*(1-recT),sk);
+      oRect(sx-fDir*(shoulderW/2+upperArmW),armTop,upperArmW,upperArmLen,sk);
     }
   }else if(aType==='SHOVE'){
-    // SHOVE arm phases
     if(aPhase==='WINDUP'){
-      oRect(sx-fDir*(torsoW/2+10),armTop+2,armW,armLen-2,sk);
-      oRect(sx+fDir*2,armTop+1,armW,armLen-2,sk);
+      oRect(sx-fDir*(shoulderW/2+upperArmW+3),armTop,upperArmW,upperArmLen,sk);
+      oRect(sx-fDir*(shoulderW/2+3),armTop,forearmW,forearmLen-2,sk);
+      oRect(sx-fDir*(shoulderW/2+upperArmW),armTop+2,upperArmW,upperArmLen-2,sk);
     }else if(aPhase==='STRIKE'){
-      oRect(sx+fDir*(torsoW/2),armTop-2,fDir*22,armW+2,sk);
-      oEllipse(sx+fDir*(torsoW/2+22),armTop+armW/2-1,6,6,sk);
-      oRect(sx-fDir*(torsoW/2+armW),armTop+1,armW,armLen-3,sk);
+      oRect(sx+fDir*(shoulderW/2),armTop-2,fDir*16,upperArmW+2,sk);
+      oRect(sx+fDir*(shoulderW/2+16),armTop-3,fDir*10,forearmW+2,sk);
+      oEllipse(sx+fDir*(shoulderW/2+26),armTop+upperArmW/2-1,7,7,sk);
+      oRect(sx+fDir*(shoulderW/2-4),armTop+2,fDir*14,upperArmW,sk);
+      oEllipse(sx+fDir*(shoulderW/2+10),armTop+upperArmW/2+1,6,6,sk);
     }else if(aPhase==='FOLLOW'){
       const recT=Math.min(aFip/8,1);
-      const ext=lerp(22,14,recT);
-      oRect(sx+fDir*(torsoW/2),armTop,fDir*ext,armW,sk);
-      oEllipse(sx+fDir*(torsoW/2+ext),armTop+armW/2,5,5,sk);
-      oRect(sx-fDir*(torsoW/2+armW),armTop+1,armW,armLen-3,sk);
+      const ext=lerp(24,14,recT);
+      oRect(sx+fDir*(shoulderW/2),armTop,fDir*ext,upperArmW,sk);
+      oEllipse(sx+fDir*(shoulderW/2+ext),armTop+upperArmW/2,5,5,sk);
+      oRect(sx-fDir*(shoulderW/2+upperArmW),armTop+1,upperArmW,upperArmLen-3,sk);
     }else if(aPhase==='RECOVER'){
       const recT=Math.min(aFip/8,1);
       const sw=moving?Math.sin(p.runCycle)*3:0;
-      oRect(sx-torsoW/2-armW,armTop+sw*recT,armW,armLen,sk);
-      oRect(sx+torsoW/2,armTop-sw*recT,armW,armLen,sk);
+      drawDefaultArms(sx,armTop,shoulderW,upperArmW,forearmW,upperArmLen,forearmLen,sw*recT,sk,skL);
     }
   }else if(aType==='BLOCK'){
     if(aPhase==='LEAP'){
       const ext=Math.min(aFip/8,1);
-      const armY=lerp(armTop,torsoTop-18,ext);
-      oRect(sx-13,armY,armW,armLen+ext*8,sk);
-      oRect(sx+7,armY,armW,armLen+ext*8,sk);
-      // Open hands (not fists)
-      oEllipse(sx-13+armW/2,armY-2,5,6,sk);
-      oEllipse(sx+7+armW/2,armY-2,5,6,sk);
+      const armY=lerp(armTop,torsoTop-20,ext);
+      oRect(sx-14,armY,upperArmW,upperArmLen+ext*8,sk);
+      oRect(sx-13,armY-forearmLen*ext,forearmW,forearmLen*ext,sk);
+      oRect(sx+7,armY,upperArmW,upperArmLen+ext*8,sk);
+      oRect(sx+8,armY-forearmLen*ext,forearmW,forearmLen*ext,sk);
+      oEllipse(sx-11,armY-forearmLen*ext-2,5*ext+3,6*ext+3,sk);
+      oEllipse(sx+10,armY-forearmLen*ext-2,5*ext+3,6*ext+3,sk);
     }else if(aPhase==='SWAT'){
-      // Full extension — giant swat hands
-      oRect(sx-14,torsoTop-24,armW,armLen+12,sk);
-      oRect(sx+8,torsoTop-24,armW,armLen+12,sk);
-      oEllipse(sx-14+armW/2,torsoTop-28,6,7,sk);
-      oEllipse(sx+8+armW/2,torsoTop-28,6,7,sk);
+      oRect(sx-15,torsoTop-26,upperArmW,upperArmLen+12,sk);
+      oRect(sx-14,torsoTop-26-forearmLen,forearmW,forearmLen+4,sk);
+      oRect(sx+8,torsoTop-26,upperArmW,upperArmLen+12,sk);
+      oRect(sx+9,torsoTop-26-forearmLen,forearmW,forearmLen+4,sk);
+      oEllipse(sx-12,torsoTop-30-forearmLen,7,8,sk);
+      oEllipse(sx+12,torsoTop-30-forearmLen,7,8,sk);
+      ctx.strokeStyle=sk;ctx.lineWidth=2;
+      for(let f=-1;f<=1;f++){
+        ctx.beginPath();ctx.moveTo(sx-12+f*3,torsoTop-32-forearmLen);ctx.lineTo(sx-12+f*5,torsoTop-38-forearmLen);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(sx+12+f*3,torsoTop-32-forearmLen);ctx.lineTo(sx+12+f*5,torsoTop-38-forearmLen);ctx.stroke();
+      }
     }else if(aPhase==='LAND'){
       const recT=Math.min(aFip/12,1);
-      const armY=lerp(torsoTop-12,armTop+2,recT);
-      oRect(sx-12,armY,armW,armLen,sk);
-      oRect(sx+6,armY,armW,armLen,sk);
+      const armY=lerp(torsoTop-14,armTop+2,recT);
+      oRect(sx-13,armY,upperArmW,upperArmLen);
+      oRect(sx+6,armY,upperArmW,upperArmLen);
+    }
+  }else if(aType==='STEAL'){
+    if(aPhase==='CROUCH'){
+      const crouchT=Math.min(aFip/6,1);
+      const armY=armTop+crouchT*4;
+      oRect(sx-shoulderW/2-upperArmW,armY,upperArmW,upperArmLen,sk);
+      oRect(sx-shoulderW/2-forearmW,armY+upperArmLen,forearmW,forearmLen-2,sk);
+      oRect(sx+shoulderW/2,armY,upperArmW,upperArmLen,sk);
+      oRect(sx+shoulderW/2+1,armY+upperArmLen,forearmW,forearmLen-2,sk);
+    }else if(aPhase==='REACH'){
+      const reachT=Math.min(aFip/8,1);
+      const reachDist=lerp(0,30,reachT);
+      oRect(sx+fDir*(shoulderW/2),armTop-3,fDir*reachDist,upperArmW+1,sk);
+      if(reachDist>10){
+        oRect(sx+fDir*(shoulderW/2+reachDist),armTop-4,fDir*12*reachT,forearmW,sk);
+      }
+      if(reachT>0.4){
+        const handX=sx+fDir*(shoulderW/2+reachDist+12*reachT);
+        const handY=armTop-1;
+        oEllipse(handX,handY,7,7,sk);
+        ctx.strokeStyle=sk;ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.moveTo(handX,handY-5);ctx.lineTo(handX+fDir*6,handY-9);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(handX+fDir*2,handY-4);ctx.lineTo(handX+fDir*8,handY-6);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(handX+fDir*2,handY+3);ctx.lineTo(handX+fDir*7,handY+5);ctx.stroke();
+        ctx.strokeStyle='#000';ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(handX,handY-5);ctx.lineTo(handX+fDir*6,handY-9);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(handX+fDir*2,handY-4);ctx.lineTo(handX+fDir*8,handY-6);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(handX+fDir*2,handY+3);ctx.lineTo(handX+fDir*7,handY+5);ctx.stroke();
+      }
+      oRect(sx-fDir*(shoulderW/2+upperArmW),armTop+2,upperArmW,upperArmLen,sk);
+      oRect(sx-fDir*(shoulderW/2+forearmW),armTop+2+upperArmLen,forearmW,forearmLen-4,sk);
+    }else if(aPhase==='SWIPE'){
+      const swipeT=Math.min(aFip/10,1);
+      const swipeX=sx+fDir*(shoulderW/2+32-swipeT*20);
+      oRect(sx+fDir*(shoulderW/2),armTop-4+swipeT*3,fDir*(28-swipeT*12),upperArmW+2,sk);
+      oEllipse(swipeX,armTop+swipeT*3,6,6,sk);
+      ctx.strokeStyle=`rgba(200,220,255,${0.6*(1-swipeT)})`;ctx.lineWidth=2;
+      for(let i=0;i<3;i++){
+        const streakX=swipeX+fDir*(5+i*8);
+        ctx.beginPath();ctx.moveTo(streakX,armTop-2+swipeT*3);ctx.lineTo(streakX+fDir*12,armTop+swipeT*3);ctx.stroke();
+      }
+      oRect(sx-fDir*(shoulderW/2+upperArmW),armTop+3,upperArmW,upperArmLen-2,sk);
+    }else if(aPhase==='RECOVER'){
+      const recT=Math.min(aFip/12,1);
+      const sw=moving?Math.sin(p.runCycle)*3:0;
+      drawDefaultArms(sx,armTop,shoulderW,upperArmW,forearmW,upperArmLen,forearmLen,sw*recT,sk,skL);
     }
   }else if(p.hasBall){
-    oRect(sx+fDir*(torsoW/2),armTop,fDir*10,armW,sk);
-    oRect(sx-fDir*(torsoW/2+armW),armTop+1,armW,armLen-2,sk);
-    oEllipse(sx+fDir*(torsoW/2+10),armTop+armW/2,4,4,sk);
+    oRect(sx+fDir*(shoulderW/2),armTop,fDir*12,upperArmW,sk);
+    oRect(sx+fDir*(shoulderW/2+12),armTop-1,fDir*6,forearmW,sk);
+    oEllipse(sx+fDir*(shoulderW/2+18),armTop+upperArmW/2-1,5,5,sk);
+    oRect(sx-fDir*(shoulderW/2+upperArmW),armTop+1,upperArmW,upperArmLen,sk);
+    oRect(sx-fDir*(shoulderW/2+forearmW),armTop+1+upperArmLen,forearmW,forearmLen-4,sk);
   }else{
-    const sw=moving?Math.sin(p.runCycle)*5:0;
-    oRect(sx-torsoW/2-armW,armTop+sw,armW,armLen,sk);
-    oRect(sx+torsoW/2,armTop-sw,armW,armLen,sk);
-    oEllipse(sx-torsoW/2-armW/2,armTop+sw+armLen,4,4,sk);
-    oEllipse(sx+torsoW/2+armW/2,armTop-sw+armLen,4,4,sk);
+    const sw=moving?Math.sin(p.runCycle)*6:0;
+    drawDefaultArms(sx,armTop,shoulderW,upperArmW,forearmW,upperArmLen,forearmLen,sw,sk,skL);
   }
 
-  // Wristbands (some players)
+  // Wristbands
   if(pid==='lebron'||pid==='tatum'||pid==='giannis'){
     ctx.fillStyle=c1;
-    ctx.fillRect(sx-torsoW/2-armW-1,armTop+5,armW+2,3);
-    ctx.fillRect(sx+torsoW/2-1,armTop+5,armW+2,3);
+    ctx.fillRect(sx-shoulderW/2-upperArmW-1,armTop+upperArmLen-1,upperArmW+2,3);
+    ctx.fillRect(sx+shoulderW/2-1,armTop+upperArmLen-1,upperArmW+2,3);
   }
-
   // ============ HUGE HEAD ============
   const headCY=sy-30;
 
-  // Neck (outlined)
-  oRect(sx-5,torsoTop-6,10,8,sk);
+  // Neck (muscular, outlined)
+  oRect(sx-6,torsoTop-7,12,9,sk);
+  // Neck muscle highlight
+  ctx.fillStyle=skL;ctx.globalAlpha=0.15;
+  ctx.beginPath();ctx.ellipse(sx+2,torsoTop-3,3,4,0,0,Math.PI*2);ctx.fill();
+  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
 
   // EARS (behind head for some, with outline)
   const earS=lk.earSz;
@@ -1706,7 +1856,7 @@ function drawPlayer(p){
   ctx.beginPath();ctx.arc(eyeCX+8+fDir*1,eyeCY-2,2,0,Math.PI*2);ctx.fill();
 
   // Angry eyes when dunking/shoving/blocking/shooting peak
-  if(p.dunking||p.shoving||p.blocking||(aType==='JUMP_SHOT'&&(aPhase==='HANG'||aPhase==='RELEASE'))){
+  if(p.dunking||p.shoving||p.blocking||p.stealing||(aType==='JUMP_SHOT'&&(aPhase==='HANG'||aPhase==='RELEASE'))){
     ctx.strokeStyle='#000';ctx.lineWidth=3;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(eyeCX-8-6,eyeCY-8);ctx.lineTo(eyeCX-8+6,eyeCY-11);ctx.stroke();
     ctx.beginPath();ctx.moveTo(eyeCX+8-6,eyeCY-11);ctx.lineTo(eyeCX+8+6,eyeCY-8);ctx.stroke();
@@ -1734,7 +1884,7 @@ function drawPlayer(p){
 
   // MOUTH (expressive!)
   const mY=headCY+hh*0.42;
-  if(p.dunking||p.onFire||p.shoving||p.blocking||(aType==='JUMP_SHOT'&&aPhase==='HANG')){
+  if(p.dunking||p.onFire||p.shoving||p.blocking||p.stealing||(aType==='JUMP_SHOT'&&aPhase==='HANG')){
     // SCREAMING — wide open mouth
     ctx.fillStyle='#000';
     ctx.beginPath();ctx.ellipse(sx+fDir*4,mY,9,7,0,0,Math.PI*2);ctx.fill();
