@@ -867,6 +867,11 @@ function passBall(p){
   const d=dist(p,tm);const spd=9;
   ball.vx=(tm.x-p.x)/d*spd;ball.vy=(tm.y-p.y)/d*spd;ball.vz=2;
   playTone(350,0.08,'triangle',0.12);
+  // Immediately switch control to the receiver so player can reposition them
+  if(p.isP1&&p.controlled){
+    p.controlled=false;
+    tm.controlled=true;
+  }
 }
 
 function drawPassIndicator(){
