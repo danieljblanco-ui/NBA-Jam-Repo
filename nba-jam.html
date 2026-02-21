@@ -32,6 +32,10 @@ window.addEventListener('keyup',e=>{
     if(ctrl&&ctrl.shotMeter.active&&!ctrl.shotMeter.locked){
       ctrl.shotMeter.locked=true;
     }
+    // Lock contest meter on keyup too
+    if(ctrl&&ctrl.contestMeter.active&&!ctrl.contestMeter.locked){
+      ctrl.contestMeter.locked=true;
+    }
   }
 });
 
@@ -54,6 +58,7 @@ function sfxSteal(){playTone(300,0.1,'triangle',0.2)}
 function sfxShove(){playTone(140,0.25,'sawtooth',0.2)}
 function sfxSelect(){playTone(500,0.1,'square',0.15);setTimeout(()=>playTone(700,0.15,'square',0.15),100)}
 function sfxFire(){for(let i=0;i<5;i++)setTimeout(()=>playTone(300+i*100,0.15,'sawtooth',0.18),i*60)}
+function sfxBlock(){playTone(90,0.4,'sawtooth',0.3);setTimeout(()=>playTone(60,0.3,'square',0.25),40)}
 
 // --- Per-Player Appearance Data ---
 // Each player gets a custom head contour defined by bezier control points
@@ -499,6 +504,8 @@ function createPlayer(teamIdx,playerIdx,team,isP1,slot){
     trail:[],trailTimer:0,
     // Shot meter
     shotMeter:{active:false,fill:0,dir:1,speed:2.8,locked:false},
+    // Defender contest meter
+    contestMeter:{active:false,fill:0,dir:1,speed:3.5,locked:false,target:null},
     // Double-tap dunk detection
     lastSpaceTime:0,
   };
@@ -541,8 +548,25 @@ function attemptShot(p){
   if(!p.hasBall||p.shooting||p.dunking||p.z>0||possessionLocked||p.anim)return;
   startAnim(p,'JUMP_SHOT');
   sfxShoot();
+  const hoop=getTargetHoop(p);
+  const d=dist(p,hoop);
+  const three=isThreePoint(p);
+  // Meter speed increases with distance — harder to time long shots
+  const baseSpeed=2.0+rnd(0,0.8);
+  const distBonus=three?1.2:d>250?0.6:0;
   p.shotMeter.active=true;p.shotMeter.fill=0;p.shotMeter.dir=1;
-  p.shotMeter.speed=2.2+rnd(0,1.2);p.shotMeter.locked=false;
+  p.shotMeter.speed=baseSpeed+distBonus;p.shotMeter.locked=false;
+  p.shotMeter.sweetSpotSize=three?12:18; // narrower sweet spot for 3s
+  p.shotMeter.isThree=three;
+  p.shotMeter.shotDist=d;
+  // Alert nearby defenders — they can contest!
+  for(const def of players){
+    if(def.isP1===p.isP1)continue;
+    const dd=dist(def,p);
+    if(dd<80&&!def.anim&&def.z===0){
+      def.contestMeter.target=p; // track who they're contesting
+    }
+  }
   // AI auto-locks meter at skill-weighted position
   if(!p.controlled||!p.isP1){
     const skill=((p.stats.threePt||5)+(p.stats.dunk||5))/2;
@@ -568,6 +592,23 @@ function attemptDunk(p){
   }
 }
 
+// --- Contest system ---
+function attemptContest(def){
+  // Defender tries to contest a nearby shooter
+  if(def.contestMeter.active||def.anim)return;
+  const shooter=def.contestMeter.target;
+  if(!shooter||!shooter.anim||shooter.anim.type!=='JUMP_SHOT')return;
+  if(dist(def,shooter)>90)return;
+  // Start the block/contest meter
+  def.contestMeter.active=true;
+  def.contestMeter.fill=0;def.contestMeter.dir=1;
+  def.contestMeter.speed=3.0+rnd(0,1.5);
+  def.contestMeter.locked=false;
+  // Jump into block animation
+  startAnim(def,'BLOCK');
+  playTone(280,0.06,'square',0.08);
+}
+
 function releaseShot(p){
   if(!p.hasBall)return;
   const hoop=getTargetHoop(p);
@@ -577,11 +618,70 @@ function releaseShot(p){
   if(p.onFire)acc+=3;
   if(p.turboActive)acc+=0.5;
   acc-=Math.max(0,(d-200)*0.01);
-  // Shot meter modifier
+
+  // Shot meter modifier — sweet spot is center, size varies by distance
   const meterVal=p.shotMeter.fill;
+  const sweetSize=p.shotMeter.sweetSpotSize||15;
   const distC=Math.abs(meterVal-50);
-  if(distC<=15){acc+=2.5-distC*0.1}else{acc-=(distC-15)*0.06}
+  if(distC<=sweetSize){
+    // In the green zone — bonus scales with precision
+    acc+=3.0-distC*(2.5/sweetSize);
+  }else{
+    // Outside green zone — penalty increases sharply
+    acc-=(distC-sweetSize)*0.08;
+  }
+
+  // Defender contest modifier
+  let contested=false;
+  let blocked=false;
+  let contestLabel='';
+  for(const def of players){
+    if(def.isP1===p.isP1)continue;
+    if(def.contestMeter.target!==p)continue;
+    const dd=dist(def,p);
+    if(dd>100){def.contestMeter.active=false;def.contestMeter.target=null;continue}
+    if(def.contestMeter.active){
+      const cVal=def.contestMeter.fill;
+      const cDistC=Math.abs(cVal-50);
+      const defSkill=def.stats.def||5;
+      if(cDistC<=12&&dd<50){
+        // Perfect contest + close = BLOCKED!
+        blocked=true;
+        contestLabel='BLOCKED!';
+        announce(pick(['REJECTED!','GET THAT OUTTA HERE!','NO NO NO!','SWATTED!','DENIED!']),90);
+        shakeTimer=12;shakeMag=15;
+      }else if(cDistC<=20&&dd<70){
+        // Good contest — heavy penalty
+        acc-=3.5;contested=true;
+        contestLabel='CONTESTED!';
+      }else if(dd<90){
+        // Presence alone affects shot
+        acc-=1.5;contested=true;
+        contestLabel='HAND IN FACE!';
+      }
+    }else if(dd<60){
+      // Defender didn't use meter but is nearby — light contest
+      acc-=1.0;contested=true;
+    }
+    def.contestMeter.active=false;def.contestMeter.target=null;
+  }
+
   p.shotMeter.active=false;
+
+  if(blocked){
+    // Ball gets swatted — goes loose with force
+    p.hasBall=false;ball.owner=null;
+    ball.x=p.x;ball.y=p.y;ball.z=p.z+25;
+    ball.shotInFlight=false;ball.loose=true;
+    ball.vx=rnd(-6,6);ball.vy=rnd(-4,4);ball.vz=rnd(3,6);
+    sfxBlock();
+    for(let i=0;i<20;i++)particles.push({x:p.x+rnd(-10,10),y:p.y-p.z+rnd(-10,10),
+      vx:rnd(-6,6),vy:rnd(-5,3),life:18,maxLife:18,color:'#FF4444',size:rnd(5,12)});
+    return; // no shot released
+  }
+
+  if(contested&&contestLabel){announce(contestLabel,50)}
+
   const miss=rnd(0,10)>clamp(acc,1,10);
   const tx=hoop.x+(miss?rnd(-45,45):rnd(-8,8));
   const ty=hoop.y+(miss?rnd(-35,35):rnd(-5,5));
@@ -788,22 +888,60 @@ function drawPassIndicator(){
 
 function drawShotMeters(){
   for(const p of players){
-    if(!p.shotMeter.active)continue;
-    const pp=perspProject(p.x,p.y);
-    const sc=pp.scale;
-    const barW=50*sc, barH=6*sc;
-    const bx=pp.x-barW/2, by=pp.y+28*sc;
-    ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(bx-1,by-1,barW+2,barH+2);
-    const gx=bx+barW*0.35;
-    ctx.fillStyle='rgba(0,200,0,0.35)';ctx.fillRect(gx,by,barW*0.30,barH);
-    const fillW=barW*(p.shotMeter.fill/100);
-    const distC=Math.abs(p.shotMeter.fill-50);
-    ctx.fillStyle=distC<=15?'#00FF44':distC<=25?'#FFD700':'#FF3322';
-    ctx.fillRect(bx,by,fillW,barH);
-    ctx.fillStyle='#FFF';ctx.fillRect(bx+fillW-1,by-2,3,barH+4);
-    if(p.shotMeter.locked&&distC<=15){
-      ctx.font=`bold ${Math.round(9*sc)}px Arial`;ctx.fillStyle='#FFF';ctx.textAlign='center';
-      ctx.fillText('PERFECT!',pp.x,by+barH+10*sc);
+    // Draw shooter's shot meter
+    if(p.shotMeter.active){
+      const pp=perspProject(p.x,p.y);
+      const sc=pp.scale;
+      const barW=50*sc, barH=6*sc;
+      const bx=pp.x-barW/2, by=pp.y+28*sc;
+      // Background
+      ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(bx-1,by-1,barW+2,barH+2);
+      // Sweet spot zone (variable size)
+      const sweetSize=p.shotMeter.sweetSpotSize||15;
+      const sweetPct=sweetSize/50; // convert to 0-1 range
+      const gx=bx+barW*(0.5-sweetPct);
+      ctx.fillStyle='rgba(0,200,0,0.35)';ctx.fillRect(gx,by,barW*sweetPct*2,barH);
+      // Fill bar
+      const fillW=barW*(p.shotMeter.fill/100);
+      const distC=Math.abs(p.shotMeter.fill-50);
+      ctx.fillStyle=distC<=sweetSize?'#00FF44':distC<=sweetSize+10?'#FFD700':'#FF3322';
+      ctx.fillRect(bx,by,fillW,barH);
+      // Cursor
+      ctx.fillStyle='#FFF';ctx.fillRect(bx+fillW-1,by-2,3,barH+4);
+      // Perfect label
+      if(p.shotMeter.locked&&distC<=sweetSize){
+        ctx.font=`bold ${Math.round(9*sc)}px Arial`;ctx.fillStyle='#00FF44';ctx.textAlign='center';
+        ctx.fillText('PERFECT!',pp.x,by+barH+12*sc);
+      }
+      // "SHOT" label above bar
+      ctx.font=`bold ${Math.round(7*sc)}px Arial`;ctx.fillStyle='rgba(255,255,255,0.7)';ctx.textAlign='center';
+      ctx.fillText('SHOT',pp.x,by-3*sc);
+    }
+    // Draw defender's contest meter (red themed)
+    if(p.contestMeter.active){
+      const pp=perspProject(p.x,p.y);
+      const sc=pp.scale;
+      const barW=44*sc, barH=5*sc;
+      const bx=pp.x-barW/2, by=pp.y+26*sc;
+      // Background
+      ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(bx-1,by-1,barW+2,barH+2);
+      // Sweet spot zone (center 24%)
+      const gx=bx+barW*0.38;
+      ctx.fillStyle='rgba(255,60,0,0.35)';ctx.fillRect(gx,by,barW*0.24,barH);
+      // Fill bar
+      const fillW=barW*(p.contestMeter.fill/100);
+      const cDistC=Math.abs(p.contestMeter.fill-50);
+      ctx.fillStyle=cDistC<=12?'#FF2200':cDistC<=20?'#FF8800':'#884400';
+      ctx.fillRect(bx,by,fillW,barH);
+      // Cursor
+      ctx.fillStyle='#FFF';ctx.fillRect(bx+fillW-1,by-2,3,barH+4);
+      // Labels
+      ctx.font=`bold ${Math.round(7*sc)}px Arial`;ctx.fillStyle='rgba(255,100,100,0.9)';ctx.textAlign='center';
+      ctx.fillText('BLOCK',pp.x,by-3*sc);
+      if(p.contestMeter.locked&&cDistC<=12){
+        ctx.font=`bold ${Math.round(9*sc)}px Arial`;ctx.fillStyle='#FF2200';
+        ctx.fillText('REJECT!',pp.x,by+barH+12*sc);
+      }
     }
   }
 }
@@ -938,6 +1076,21 @@ function updateAI(p){
        targetDist<65&&p.z===0&&!p.anim&&p.aiDecisionTimer<=0&&rnd(0,1)<0.25){
       startAnim(p,'BLOCK');p.aiDecisionTimer=rndInt(30,50);
     }
+    // Contest jump shots! AI uses the contest meter system
+    if(p.contestMeter.target&&p.contestMeter.target.anim&&
+       p.contestMeter.target.anim.type==='JUMP_SHOT'&&
+       !p.contestMeter.active&&!p.anim&&p.z===0&&p.aiDecisionTimer<=0){
+      const contestChance=0.15+(p.stats.def||5)*0.06; // better defenders contest more
+      if(rnd(0,1)<contestChance){
+        attemptContest(p);
+        // AI locks contest meter at skill-weighted position
+        const defSkill=p.stats.def||5;
+        const variance=40-defSkill*3;
+        p.contestMeter.fill=50+rnd(-variance,variance);
+        p.contestMeter.locked=true;
+        p.aiDecisionTimer=rndInt(20,40);
+      }
+    }
     // Chase loose ball
     if(ball.loose&&!ball.shotInFlight&&!possessionLocked&&dist(p,ball)<100){
       const dx=ball.x-p.x,dy=ball.y-p.y,d=Math.hypot(dx,dy);
@@ -991,6 +1144,16 @@ function updatePlayers(){
       if(p.shotMeter.fill>=100){p.shotMeter.fill=100;p.shotMeter.dir=-1}
       if(p.shotMeter.fill<=0){p.shotMeter.fill=0;p.shotMeter.dir=1}
     }
+    // Contest meter oscillation (defender)
+    if(p.contestMeter.active&&!p.contestMeter.locked){
+      p.contestMeter.fill+=p.contestMeter.dir*p.contestMeter.speed;
+      if(p.contestMeter.fill>=100){p.contestMeter.fill=100;p.contestMeter.dir=-1}
+      if(p.contestMeter.fill<=0){p.contestMeter.fill=0;p.contestMeter.dir=1}
+    }
+    // Clear contest target if shooter no longer shooting
+    if(p.contestMeter.target&&(!p.contestMeter.target.anim||p.contestMeter.target.anim.type!=='JUMP_SHOT')){
+      p.contestMeter.active=false;p.contestMeter.target=null;
+    }
 
     // Player-controlled
     if(p.controlled&&p.isP1&&p.stumble<=0&&!possessionLocked&&!p.anim){
@@ -1037,8 +1200,16 @@ function updatePlayers(){
         else if(!p.hasBall&&!p.anim){doSteal(p)}
         keys['KeyX']=false;keys['KeyC']=false;
       }
-      // --- SHOVE (Space without ball) ---
-      if((keys['Space']||keys['KeyZ'])&&!p.hasBall&&p.z===0){doShove(p);keys['Space']=false;keys['KeyZ']=false}
+      // --- CONTEST or SHOVE (Space without ball) ---
+      if((keys['Space']||keys['KeyZ'])&&!p.hasBall&&p.z===0){
+        // Check if there's a shooter nearby to contest
+        if(p.contestMeter.target&&p.contestMeter.target.anim&&p.contestMeter.target.anim.type==='JUMP_SHOT'&&!p.contestMeter.active){
+          attemptContest(p);
+        }else{
+          doShove(p);
+        }
+        keys['Space']=false;keys['KeyZ']=false;
+      }
       // --- SWITCH PLAYER ---
       if(keys['KeyQ']||keys['Tab']){switchControlledPlayer();keys['KeyQ']=false;keys['Tab']=false}
     }
@@ -2660,6 +2831,9 @@ function isBulletTimeMoment(){
     // Steals: slow during REACH and SWIPE
     if(t==='STEAL'&&(p.anim.phase==='REACH'||p.anim.phase==='SWIPE'))
       return{speed:GAME_SPEED_SLOMOSTEAL,label:'STEAL'};
+    // Block contest: extra slow-mo when defender is contesting a shot
+    if(t==='BLOCK'&&p.contestMeter.active)
+      return{speed:GAME_SPEED_SLOMOSHOT*0.8,label:'CONTESTED!'};
   }
   return null;
 }
