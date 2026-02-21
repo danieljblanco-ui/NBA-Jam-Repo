@@ -836,6 +836,12 @@ function updateBall(){
         p.hasBall=true;ball.owner=p;ball.loose=false;ball.shotInFlight=false;
         ball.passTarget=null;
         shotClockTimer=SHOT_CLOCK;
+        // Auto-switch control to ball carrier on P1 team
+        if(p.isP1&&!p.controlled){
+          const prev=players.find(pp=>pp.isP1&&pp.controlled);
+          if(prev)prev.controlled=false;
+          p.controlled=true;
+        }
         if(wasPass){
           for(let i=0;i<10;i++){const a=Math.PI*2*i/10;
             particles.push({x:p.x,y:p.y,z:p.z+12,vx:Math.cos(a)*2.5,vy:Math.sin(a)*1.2,vz:rnd(1,3),
@@ -1196,8 +1202,17 @@ function updatePlayers(){
       }
       // --- PASS / STEAL (X/C) ---
       if(keys['KeyX']||keys['KeyC']){
-        if(p.hasBall&&!p.anim){passBall(p)}
-        else if(!p.hasBall&&!p.anim){doSteal(p)}
+        if(p.hasBall){
+          passBall(p);
+        }else{
+          // Check if teammate has ball — call for pass
+          const tm=players.find(pp=>pp.isP1===p.isP1&&pp!==p&&pp.hasBall);
+          if(tm&&!possessionLocked){
+            passBall(tm); // teammate passes to us
+          }else{
+            doSteal(p);
+          }
+        }
         keys['KeyX']=false;keys['KeyC']=false;
       }
       // --- CONTEST or SHOVE (Space without ball) ---
@@ -1218,6 +1233,11 @@ function updatePlayers(){
       // Player has an animation playing — still allow pass, steal, switch
       if(keys['KeyX']||keys['KeyC']){
         if(p.hasBall){passBall(p);if(p.anim)endAnim(p)}
+        else{
+          // Call for pass from teammate
+          const tm=players.find(pp=>pp.isP1===p.isP1&&pp!==p&&pp.hasBall);
+          if(tm)passBall(tm);
+        }
         keys['KeyX']=false;keys['KeyC']=false;
       }
       if(keys['KeyQ']||keys['Tab']){switchControlledPlayer();keys['KeyQ']=false;keys['Tab']=false}
@@ -2807,9 +2827,9 @@ function draw(){
 // ============================================================
 //  BULLET TIME — fast gameplay with dramatic slowdown on key moments
 // ============================================================
-const GAME_SPEED_NORMAL=2.0;     // 2x speed for fast arcade feel
-const GAME_SPEED_SLOMOSHOT=0.35; // dramatic slowdown for shots/dunks
-const GAME_SPEED_SLOMOSTEAL=0.5; // slightly faster slowdown for steals
+const GAME_SPEED_NORMAL=2.5;     // 2.5x speed for fast arcade feel
+const GAME_SPEED_SLOMOSHOT=0.45; // dramatic slowdown for shots/dunks
+const GAME_SPEED_SLOMOSTEAL=0.65; // slightly faster slowdown for steals
 let gameSpeed=GAME_SPEED_NORMAL;
 let targetGameSpeed=GAME_SPEED_NORMAL;
 let gameSpeedAccum=0;
