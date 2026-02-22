@@ -2797,6 +2797,7 @@ function draw(){
     case'title':drawTitle();break;
     case'teamselect':drawTeamSelect();break;
     case'gameplay':
+      try{
       ctx.save();
       if(shakeTimer>0)ctx.translate(rnd(-shakeMag,shakeMag),rnd(-shakeMag,shakeMag));
       drawBackground();drawCourt();
@@ -2828,6 +2829,7 @@ function draw(){
       });
       drawParticles();drawPassIndicator();drawShotMeters();
       ctx.restore();drawHUD();
+      }catch(gameErr){console.error('GAMEPLAY CRASH:',gameErr.message,gameErr.stack);ctx.save();ctx.fillStyle='red';ctx.font='bold 16px monospace';ctx.fillText('ERROR: '+gameErr.message,10,30);ctx.fillText('Check console (F12) for details',10,50);ctx.restore();}
       break;
     case'halftime':drawHalftime();break;
     case'gameover':drawGameover();break;
@@ -2887,7 +2889,7 @@ function gameLoop(){
   // Accumulator-based sub-stepping
   gameSpeedAccum+=gameSpeed;
   while(gameSpeedAccum>=1){
-    update();
+    try{update();}catch(e){console.error('UPDATE CRASH:',e.message,e.stack);gameSpeedAccum=0;break;}
     gameSpeedAccum-=1;
   }
 
