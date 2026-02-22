@@ -2751,7 +2751,9 @@ function isBulletTimeMoment(){
   return null;
 }
 
+let _lastError=null;
 function gameLoop(){
+ try{
   // Determine target speed
   const btMoment=scene==='gameplay'?isBulletTimeMoment():null;
   targetGameSpeed=btMoment?btMoment.speed:GAME_SPEED_NORMAL;
@@ -2775,6 +2777,22 @@ function gameLoop(){
   }
 
   draw();
+ }catch(fatal){
+  _lastError=fatal.message+'\n'+fatal.stack;
+  console.error('FATAL:',fatal);
+ }
+ // Always show error overlay if we caught one
+ if(_lastError){
+  const c=document.getElementById('game').getContext('2d');
+  c.save();c.setTransform(1,0,0,1,0,0);
+  c.fillStyle='rgba(0,0,0,0.85)';c.fillRect(0,0,960,640);
+  c.fillStyle='#FF4444';c.font='bold 20px monospace';
+  c.fillText('GAME ERROR — check console (F12)',20,40);
+  c.fillStyle='#FFF';c.font='14px monospace';
+  const lines=_lastError.split('\n');
+  lines.slice(0,12).forEach((ln,i)=>c.fillText(ln.substring(0,100),20,70+i*18));
+  c.restore();
+ }
 
   // Draw bullet-time vignette overlay
   if(bulletTimeVignette>0.01&&scene==='gameplay'){
