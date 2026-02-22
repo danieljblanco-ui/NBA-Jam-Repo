@@ -2822,11 +2822,12 @@ function draw(){
         const sc=pp.scale;
         ctx.translate(pp.x,pp.y);ctx.scale(sc,sc);ctx.translate(-p.x,-p.y);
         drawPlayerTrails(p);drawTurboLines(p);
-        drawPlayer(p);drawBallOnPlayer(p);
+        try{drawPlayer(p);drawBallOnPlayer(p);}catch(e){if(!window._dpErr){window._dpErr=true;console.error('drawPlayer ERROR:',e.message,e.stack);document.title='ERR: '+e.message;}}
         ctx.restore();
       });
       drawParticles();drawPassIndicator();drawShotMeters();
       ctx.restore();drawHUD();
+      if(window._dpErr){ctx.save();ctx.fillStyle='red';ctx.font='bold 20px Arial';ctx.fillText('DRAW ERROR - check console',10,30);ctx.restore();}
       break;
     case'halftime':drawHalftime();break;
     case'gameover':drawGameover();break;
