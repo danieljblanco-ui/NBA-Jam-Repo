@@ -1954,167 +1954,51 @@ function drawPlayer(p){
     }
   }
 
-  // ============ FACE (DIGITIZED PHOTO STYLE) ============
+  // ============ FACE (RETRO ARCADE SIMPLE) ============
   const eyeCX=sx+fDir*6;
   const eyeCY=headCY-hh*0.05;
   const es=lk.eyeSz;
-  const ecC=lk.eyeC||'#2A1800'; // iris color
 
-  // FACE CONTOURING — cheekbone/jaw shadows for 3D depth
-  // Cheekbone highlight
-  ctx.fillStyle=skL;
-  ctx.beginPath();ctx.ellipse(sx+fDir*2-hw*0.35,headCY+hh*0.05,hw*0.25,hh*0.18,0,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.ellipse(sx+fDir*2+hw*0.35,headCY+hh*0.05,hw*0.25,hh*0.18,0,0,Math.PI*2);ctx.fill();
-  // Jaw shadow
-  ctx.fillStyle=skD;
-  ctx.beginPath();ctx.ellipse(sx+fDir*2-hw*0.5,headCY+hh*0.45,hw*0.2,hh*0.15,0,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.ellipse(sx+fDir*2+hw*0.5,headCY+hh*0.45,hw*0.2,hh*0.15,0,0,Math.PI*2);ctx.fill();
-  // Temple shadow
-  ctx.fillStyle=skD;
-  ctx.beginPath();ctx.ellipse(sx+fDir*2-hw*0.6,headCY-hh*0.2,hw*0.12,hh*0.2,0,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.ellipse(sx+fDir*2+hw*0.6,headCY-hh*0.2,hw*0.12,hh*0.2,0,0,Math.PI*2);ctx.fill();
-  // Brow ridge shadow
-  ctx.fillStyle=skD;
-  ctx.beginPath();
-  ctx.moveTo(eyeCX-14,eyeCY-5);
-  ctx.quadraticCurveTo(eyeCX,eyeCY-8,eyeCX+14,eyeCY-5);
-  ctx.quadraticCurveTo(eyeCX,eyeCY-3,eyeCX-14,eyeCY-5);
-  ctx.closePath();ctx.fill();
-
-  // EYES — outlined whites with iris + pupil + shine (digitized look)
-  // Eye whites with slight shadow at top
+  // EYES — simple white ovals with pupils (RETRO: no iris, no shine)
   oEllipse(eyeCX-8,eyeCY,8*es,6*es,'#FFF');
   oEllipse(eyeCX+8,eyeCY,8*es,6*es,'#FFF');
-  // Upper eye shadow (eyelid crease)
-  ctx.strokeStyle=skD;ctx.lineWidth=1.5;ctx.lineCap='round';
-  ctx.beginPath();ctx.ellipse(eyeCX-8,eyeCY-1,7*es,4*es,0,Math.PI+0.3,Math.PI*2-0.3);ctx.stroke();
-  ctx.beginPath();ctx.ellipse(eyeCX+8,eyeCY-1,7*es,4*es,0,Math.PI+0.3,Math.PI*2-0.3);ctx.stroke();
 
-  // Irises (colored)
-  const irisR=4.5*es;
-  const pupX=fDir*2;
-  ctx.fillStyle=ecC;
-  ctx.beginPath();ctx.arc(eyeCX-8+pupX,eyeCY+0.5,irisR,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(eyeCX+8+pupX,eyeCY+0.5,irisR,0,Math.PI*2);ctx.fill();
-  // Iris outline
-  ctx.strokeStyle='#000';ctx.lineWidth=1;
-  ctx.beginPath();ctx.arc(eyeCX-8+pupX,eyeCY+0.5,irisR,0,Math.PI*2);ctx.stroke();
-  ctx.beginPath();ctx.arc(eyeCX+8+pupX,eyeCY+0.5,irisR,0,Math.PI*2);ctx.stroke();
-
-  // Pupils (solid black center)
+  // Pupils only
   ctx.fillStyle='#000';
-  ctx.beginPath();ctx.arc(eyeCX-8+pupX+fDir*0.5,eyeCY+0.5,2.2*es,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(eyeCX+8+pupX+fDir*0.5,eyeCY+0.5,2.2*es,0,Math.PI*2);ctx.fill();
-
-  // Eye shine (small white highlight — digitized photo catchlight)
-  ctx.fillStyle='#FFF';
-  ctx.beginPath();ctx.arc(eyeCX-8+pupX-1.5,eyeCY-1.5,1.2*es,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(eyeCX+8+pupX-1.5,eyeCY-1.5,1.2*es,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(eyeCX-8+fDir*2.5,eyeCY+0.5,3*es,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(eyeCX+8+fDir*2.5,eyeCY+0.5,3*es,0,Math.PI*2);ctx.fill();
 
   // Angry eyes when dunking/shoving/blocking/shooting peak
   if(p.dunking||p.shoving||p.blocking||p.stealing||(aType==='JUMP_SHOT'&&(aPhase==='HANG'||aPhase==='RELEASE'))){
-    ctx.strokeStyle='#000';ctx.lineWidth=3.5;ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(eyeCX-8-7,eyeCY-7);ctx.lineTo(eyeCX-8+7,eyeCY-11);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(eyeCX+8-7,eyeCY-11);ctx.lineTo(eyeCX+8+7,eyeCY-7);ctx.stroke();
+    ctx.strokeStyle='#000';ctx.lineWidth=3;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(eyeCX-8-6,eyeCY-8);ctx.lineTo(eyeCX-8+6,eyeCY-11);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(eyeCX+8-6,eyeCY-11);ctx.lineTo(eyeCX+8+6,eyeCY-8);ctx.stroke();
   }else{
-    // Normal eyebrows — thick arched (digitized look)
+    // Normal eyebrows (thicker for RETRO)
     ctx.strokeStyle=lk.hairC;ctx.lineWidth=4;ctx.lineCap='round';
-    ctx.beginPath();
-    ctx.moveTo(eyeCX-8-6,eyeCY-7);
-    ctx.quadraticCurveTo(eyeCX-8,eyeCY-11,eyeCX-8+6,eyeCY-8);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(eyeCX+8-6,eyeCY-8);
-    ctx.quadraticCurveTo(eyeCX+8,eyeCY-11,eyeCX+8+6,eyeCY-7);
-    ctx.stroke();
+    ctx.beginPath();ctx.moveTo(eyeCX-8-5,eyeCY-8);ctx.lineTo(eyeCX-8+5,eyeCY-9);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(eyeCX+8-5,eyeCY-9);ctx.lineTo(eyeCX+8+5,eyeCY-8);ctx.stroke();
   }
 
-  // NOSE — bridge + bulb + nostrils (digitized photo style)
+  // NOSE (simple triangle, no nostrils)
   const nw=lk.noseW;
-  const noseTopY=eyeCY+4;
-  const noseBotY=headCY+hh*0.28;
-  const noseCX=sx+fDir*4;
-  // Nose bridge (lighter skin)
-  ctx.strokeStyle=skD;ctx.lineWidth=2.5;ctx.lineCap='round';
-  ctx.beginPath();
-  ctx.moveTo(noseCX-1*nw,noseTopY);
-  ctx.quadraticCurveTo(noseCX+fDir*1,lerp(noseTopY,noseBotY,0.5),noseCX+fDir*1,noseBotY-3);
-  ctx.stroke();
-  // Nose bulb
-  ctx.fillStyle=sk;
-  ctx.beginPath();ctx.ellipse(noseCX+fDir*1,noseBotY-1,5*nw,4*nw,0,0,Math.PI*2);ctx.fill();
-  ctx.strokeStyle=skD;ctx.lineWidth=1.5;
-  ctx.beginPath();ctx.ellipse(noseCX+fDir*1,noseBotY-1,5*nw,4*nw,0,0,Math.PI*2);ctx.stroke();
-  // Nostrils
   ctx.fillStyle=skD;
-  ctx.beginPath();ctx.ellipse(noseCX-3*nw,noseBotY,2*nw,1.5*nw,0,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.ellipse(noseCX+3*nw+fDir*2,noseBotY,2*nw,1.5*nw,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(sx+fDir*4,eyeCY+5);
+  ctx.lineTo(sx+fDir*4-4*nw,headCY+hh*0.25);
+  ctx.lineTo(sx+fDir*4+4*nw,headCY+hh*0.25);
+  ctx.closePath();ctx.fill();
 
-  // MOUTH — lips with teeth when screaming (digitized photo style)
+  // MOUTH (simple: open black circle when active, line when neutral)
   const mY=headCY+hh*0.42;
-  const isIntense=p.dunking||p.onFire||p.shoving||p.blocking||p.stealing||(aType==='JUMP_SHOT'&&aPhase==='HANG');
-  if(isIntense){
-    // SCREAMING — open mouth with teeth and tongue
-    // Outer lips (dark outline)
+  if(p.dunking||p.onFire||p.shoving||p.blocking||p.stealing||(aType==='JUMP_SHOT'&&aPhase==='HANG')){
+    // SCREAMING — open mouth (black circle)
     ctx.fillStyle='#000';
-    ctx.beginPath();ctx.ellipse(sx+fDir*4,mY,10,8,0,0,Math.PI*2);ctx.fill();
-    // Inner mouth (dark red)
-    ctx.fillStyle='#4A0000';
-    ctx.beginPath();ctx.ellipse(sx+fDir*4,mY,8,6,0,0,Math.PI*2);ctx.fill();
-    // Upper teeth row
-    ctx.fillStyle='#F0F0F0';
-    ctx.fillRect(sx+fDir*4-6,mY-5,12,4);
-    ctx.strokeStyle='#AAA';ctx.lineWidth=0.5;
-    for(let t=-2;t<=2;t++){
-      ctx.beginPath();ctx.moveTo(sx+fDir*4+t*2.5,mY-5);ctx.lineTo(sx+fDir*4+t*2.5,mY-1);ctx.stroke();
-    }
-    // Lower teeth
-    ctx.fillStyle='#E8E8E8';
-    ctx.fillRect(sx+fDir*4-5,mY+1,10,3);
-    // Tongue hint
-    ctx.fillStyle='#CC3333';
-    ctx.beginPath();ctx.ellipse(sx+fDir*4,mY+3,4,2.5,0,0,Math.PI*2);ctx.fill();
-    // Lip outline
-    ctx.strokeStyle=skD;ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.ellipse(sx+fDir*4,mY,10,8,0,0,Math.PI*2);ctx.stroke();
-  }else if(moving){
-    // Slight open mouth when running (determined expression)
-    ctx.fillStyle=skD;
-    ctx.beginPath();ctx.ellipse(sx+fDir*3,mY,6,3,0,0,Math.PI*2);ctx.fill();
-    // Lips
-    ctx.strokeStyle=skD;ctx.lineWidth=1.5;ctx.lineCap='round';
-    ctx.beginPath();
-    ctx.moveTo(sx+fDir*3-7,mY-1);
-    ctx.quadraticCurveTo(sx+fDir*3,mY-3,sx+fDir*3+7,mY-1);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(sx+fDir*3-6,mY+1);
-    ctx.quadraticCurveTo(sx+fDir*3,mY+4,sx+fDir*3+6,mY+1);
-    ctx.stroke();
-  }else{
-    // Neutral — closed lips with definition
-    // Upper lip
-    ctx.fillStyle=skD;
-    ctx.beginPath();
-    ctx.moveTo(sx+fDir*3-7,mY);
-    ctx.quadraticCurveTo(sx+fDir*3-2,mY-3,sx+fDir*3,mY-2);
-    ctx.quadraticCurveTo(sx+fDir*3+2,mY-3,sx+fDir*3+7,mY);
-    ctx.quadraticCurveTo(sx+fDir*3,mY+1,sx+fDir*3-7,mY);
-    ctx.closePath();ctx.fill();
-    // Lower lip (slightly lighter)
-    ctx.fillStyle=sk;
-    ctx.beginPath();
-    ctx.moveTo(sx+fDir*3-6,mY+1);
-    ctx.quadraticCurveTo(sx+fDir*3,mY+5,sx+fDir*3+6,mY+1);
-    ctx.closePath();ctx.fill();
-    ctx.strokeStyle=skD;ctx.lineWidth=1;
-    ctx.beginPath();
-    ctx.moveTo(sx+fDir*3-6,mY+1);
-    ctx.quadraticCurveTo(sx+fDir*3,mY+5,sx+fDir*3+6,mY+1);
-    ctx.stroke();
-    // Mouth line
-    ctx.strokeStyle=skD;ctx.lineWidth=1.5;ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(sx+fDir*3-7,mY);ctx.lineTo(sx+fDir*3+7,mY);ctx.stroke();
+    ctx.beginPath();ctx.ellipse(sx+fDir*4,mY,9,7,0,0,Math.PI*2);ctx.fill();
+  }else if(!moving){
+    // Simple mouth line when neutral
+    ctx.strokeStyle=skD;ctx.lineWidth=2;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(sx+fDir*2-5,mY);ctx.lineTo(sx+fDir*2+5,mY-1);ctx.stroke();
   }
 
   // ============ FACIAL HAIR (simple!) ============
@@ -2797,7 +2681,6 @@ function draw(){
     case'title':drawTitle();break;
     case'teamselect':drawTeamSelect();break;
     case'gameplay':
-      try{
       ctx.save();
       if(shakeTimer>0)ctx.translate(rnd(-shakeMag,shakeMag),rnd(-shakeMag,shakeMag));
       drawBackground();drawCourt();
@@ -2823,13 +2706,11 @@ function draw(){
         const sc=pp.scale;
         ctx.translate(pp.x,pp.y);ctx.scale(sc,sc);ctx.translate(-p.x,-p.y);
         drawPlayerTrails(p);drawTurboLines(p);
-        const _savedCtx=ctx;
-        try{drawPlayer(p);drawBallOnPlayer(p);}catch(e){ctx=_savedCtx;console.error('drawPlayer:',e);}
+        drawPlayer(p);drawBallOnPlayer(p);
         ctx.restore();
       });
       drawParticles();drawPassIndicator();drawShotMeters();
       ctx.restore();drawHUD();
-      }catch(gameErr){console.error('GAMEPLAY CRASH:',gameErr.message,gameErr.stack);ctx.save();ctx.fillStyle='red';ctx.font='bold 16px monospace';ctx.fillText('ERROR: '+gameErr.message,10,30);ctx.fillText('Check console (F12) for details',10,50);ctx.restore();}
       break;
     case'halftime':drawHalftime();break;
     case'gameover':drawGameover();break;
@@ -2889,7 +2770,7 @@ function gameLoop(){
   // Accumulator-based sub-stepping
   gameSpeedAccum+=gameSpeed;
   while(gameSpeedAccum>=1){
-    try{update();}catch(e){console.error('UPDATE CRASH:',e.message,e.stack);gameSpeedAccum=0;break;}
+    update();
     gameSpeedAccum-=1;
   }
 
