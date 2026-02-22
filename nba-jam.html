@@ -1514,31 +1514,44 @@ function drawTurboLines(p){
 
 function drawPlayer(p){
   ctx.save();
+  const mainCtx=ctx; // Save main context for later
   const sx=p.x, sy=p.y-p.z;
   const lk=getLooks(p);
-  const R=32; // base head radius
+  const R=38; // RETRO: larger head radius
   const hw=R*lk.headW, hh=R*lk.headH; // ellipse radii
-  const OL=2.5; // OUTLINE thickness — the arcade look
+  const OL=4.0; // RETRO: thicker outline for arcade look
   const sk=lk.skin, skD=lk.skinD, skL=lk.skinL;
   const fDir=p.facing;
   const pid=lk.id;
 
-  // --- Dynamic Ground Shadow (stretches/fades with height) ---
+  // --- Dynamic Ground Shadow (stretches/fades with height) - ON MAIN CANVAS ---
   const shSc=1+p.z*0.012;
   const shAlpha=Math.max(0.08,0.35-p.z*0.004);
-  const shOff=p.z*0.15;// shadow shifts slightly with height
-  ctx.fillStyle=`rgba(0,0,0,${shAlpha})`;
-  ctx.beginPath();ctx.ellipse(p.x+shOff,p.y+20,18+p.z*0.3,6+p.z*0.08,0,0,Math.PI*2);ctx.fill();
-  // Second softer shadow ring for depth
-  if(p.z>5){ctx.fillStyle=`rgba(0,0,0,${shAlpha*0.4})`;
-  ctx.beginPath();ctx.ellipse(p.x+shOff*1.3,p.y+20,24+p.z*0.4,8+p.z*0.1,0,0,Math.PI*2);ctx.fill();}
+  const shOff=p.z*0.15;
+  mainCtx.fillStyle=`rgba(0,0,0,${shAlpha})`;
+  mainCtx.beginPath();mainCtx.ellipse(p.x+shOff,p.y+20,18+p.z*0.3,6+p.z*0.08,0,0,Math.PI*2);mainCtx.fill();
+  if(p.z>5){mainCtx.fillStyle=`rgba(0,0,0,${shAlpha*0.4})`;
+  mainCtx.beginPath();mainCtx.ellipse(p.x+shOff*1.3,p.y+20,24+p.z*0.4,8+p.z*0.1,0,0,Math.PI*2);mainCtx.fill();}
 
-  // Fire particles (more dramatic)
+  // Fire particles
   if(p.onFire){spawnFireParticles(sx+rnd(-12,12),sy-hh*2-10);spawnFireParticles(sx+rnd(-8,8),sy-hh*2);spawnFireParticles(sx+rnd(-5,5),sy-hh*2+5)}
 
   // Stumble tilt
-  if(p.stumble>0){ctx.translate(sx,sy);ctx.rotate(Math.sin(p.stumble*0.5)*0.4);ctx.translate(-sx,-sy)}
-  if(p.flashTimer>0&&p.flashTimer%4<2)ctx.globalAlpha=0.5;
+  if(p.stumble>0){mainCtx.translate(sx,sy);mainCtx.rotate(Math.sin(p.stumble*0.5)*0.4);mainCtx.translate(-sx,-sy)}
+  if(p.flashTimer>0&&p.flashTimer%4<2)mainCtx.globalAlpha=0.5;
+
+  // === PIXELATION SETUP ===
+  const PIX=3; // pixel scale factor
+  const sprW=140, sprH=180; // offscreen sprite size
+  if(!p._pixCvs){p._pixCvs=document.createElement('canvas');p._pixCvs.width=Math.ceil(sprW/PIX);p._pixCvs.height=Math.ceil(sprH/PIX);}
+  const pixCanvas=p._pixCvs;
+  ctx=pixCanvas.getContext('2d'); // SWAP ctx to pixelated canvas
+  ctx.clearRect(0,0,pixCanvas.width,pixCanvas.height);
+  ctx.save();
+  ctx.scale(1/PIX,1/PIX);
+  const offX=sprW/2-sx, offY=sprH*0.65-sy;
+  ctx.translate(offX,offY);
+  // From now on, all ctx calls draw to pixCanvas at 1/3 scale, then we blit back
 
   const legPhase=Math.sin(p.runCycle);
   const moving=Math.abs(p.vx)>0.6||Math.abs(p.vy)>0.6;
@@ -1561,24 +1574,24 @@ function drawPlayer(p){
     ctx.fillStyle=fill;ctx.fillRect(x,y,w,h);
   }
 
-  // ============ BODY (with squash/stretch) — REALISTIC BUILD ============
+  // ============ BODY (with squash/stretch) — RETRO ARCADE BUILD ============
   const bScY=p.animScY||1, bScX=p.animScX||1;
   const aPhase=p.anim?p.anim.phase:null;
   const aType=p.anim?p.anim.type:null;
   const aFip=p.anim?p.anim.fip:0;
   const aFc=p.anim?p.anim.fc:0;
 
-  // Body dimensions — athletic NBA build
-  const shoulderW=28*bScX;
-  const waistW=20*bScX;
+  // Body dimensions — RETRO proportions (blockier, chunkier)
+  const shoulderW=32*bScX; // 28 -> 32
+  const waistW=26*bScX;    // 20 -> 26
   const torsoTop=sy-14*bScY;
-  const torsoH=22*bScY;
+  const torsoH=16*bScY;    // 22 -> 16 (shorter torso)
   const hipY=torsoTop+torsoH;
-  const upperArmW=7*bScX, forearmW=6*bScX;
-  const upperArmLen=12*bScY, forearmLen=11*bScY;
+  const upperArmW=9*bScX, forearmW=8*bScX;     // 7,6 -> 9,8
+  const upperArmLen=9*bScY, forearmLen=8*bScY; // 12,11 -> 9,8
   const armTop=torsoTop+3;
   const thighW=8*bScX, calfW=6*bScX;
-  const thighLen=12*bScY, calfLen=10*bScY;
+  const thighLen=8*bScY, calfLen=7*bScY;       // 12,10 -> 8,7
 
   // Helper: draw default relaxed arms (upper + forearm + hand)
   function drawDefaultArms(ax,aTop,sw,uaW,faW,uaL,faL,swing,skC,skLC){
@@ -1590,11 +1603,6 @@ function drawPlayer(p){
     oRect(ax+sw/2,aTop-swing,uaW,uaL,skC);
     oRect(ax+sw/2+1,aTop-swing+uaL,faW,faL,skC);
     oEllipse(ax+sw/2+faW/2+1,aTop-swing+uaL+faL,4,4,skC);
-    // Muscle highlight
-    ctx.fillStyle=skLC;ctx.globalAlpha=0.18;
-    ctx.beginPath();ctx.ellipse(ax-sw/2-uaW/2,aTop+swing+uaL*0.4,3,5,0,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.ellipse(ax+sw/2+uaW/2,aTop-swing+uaL*0.4,3,5,0,0,Math.PI*2);ctx.fill();
-    ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
   }
 
   // LEGS — thigh + calf with knee bend
@@ -1607,18 +1615,10 @@ function drawPlayer(p){
   oRect(sx-8-legSpread,hipY+1,thighW,thighLen+lL*0.5,sk);
   // Left calf
   oRect(sx-7-legSpread,hipY+1+thighLen+lL*0.5,calfW,calfLen+lL*0.5,sk);
-  // Left knee highlight
-  ctx.fillStyle=skL;ctx.globalAlpha=0.2;
-  ctx.beginPath();ctx.ellipse(sx-4-legSpread,hipY+1+thighLen+lL*0.5,3,2,0,0,Math.PI*2);ctx.fill();
-  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
   // Right thigh
   oRect(sx+legSpread,hipY+1,thighW,thighLen+rL*0.5,sk);
   // Right calf
   oRect(sx+1+legSpread,hipY+1+thighLen+rL*0.5,calfW,calfLen+rL*0.5,sk);
-  // Right knee highlight
-  ctx.fillStyle=skL;ctx.globalAlpha=0.2;
-  ctx.beginPath();ctx.ellipse(sx+4+legSpread,hipY+1+thighLen+rL*0.5,3,2,0,0,Math.PI*2);ctx.fill();
-  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
 
   // SHOES — high-tops
   const lShoeY=hipY+1+thighLen+lL*0.5+calfLen+lL*0.5;
@@ -1634,7 +1634,7 @@ function drawPlayer(p){
   ctx.fillRect(sx-9-legSpread,lShoeY+5,thighW+2,2);
   ctx.fillRect(sx-1+legSpread,rShoeY+5,thighW+2,2);
 
-  // SHORTS — baggy
+  // SHORTS — simple baggy
   oRoundRect(sx-shoulderW/2-1,hipY-3,shoulderW+2,14*bScY,4,c1);
   ctx.fillStyle=c2;ctx.fillRect(sx-shoulderW/2+2,hipY+8*bScY,shoulderW-4,2);
 
@@ -1658,17 +1658,9 @@ function drawPlayer(p){
   ctx.beginPath();ctx.moveTo(sx-7,torsoTop);ctx.lineTo(sx,torsoTop+9);ctx.lineTo(sx+7,torsoTop);ctx.closePath();ctx.fill();
   // Collar stripe
   ctx.fillStyle=c2;ctx.fillRect(sx-shoulderW/2,torsoTop,shoulderW,3);
-  // Side seams
-  ctx.strokeStyle='#000';ctx.lineWidth=0.5;ctx.globalAlpha=0.15;
-  ctx.beginPath();ctx.moveTo(sx-shoulderW/2+3,torsoTop+3);ctx.lineTo(sx-waistW/2+3,hipY);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(sx+shoulderW/2-3,torsoTop+3);ctx.lineTo(sx+waistW/2-3,hipY);ctx.stroke();
-  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
   // Jersey number
   ctx.font=`bold ${Math.max(9,12*bScY)}px Arial`;ctx.textAlign='center';
   ctx.fillStyle=c2;ctx.fillText(p.stats.number,sx,torsoTop+torsoH-3);
-  // Rim lighting
-  ctx.fillStyle='rgba(255,255,255,0.08)';
-  ctx.fillRect(sx+shoulderW/2-4,torsoTop+2,3,torsoH-2);
   // Shoulder caps
   oEllipse(sx-shoulderW/2,torsoTop+4,6*bScX,5*bScY,c1);
   oEllipse(sx+shoulderW/2,torsoTop+4,6*bScX,5*bScY,c1);
@@ -1856,80 +1848,34 @@ function drawPlayer(p){
     ctx.fillRect(sx-shoulderW/2-upperArmW-1,armTop+upperArmLen-1,upperArmW+2,3);
     ctx.fillRect(sx+shoulderW/2-1,armTop+upperArmLen-1,upperArmW+2,3);
   }
-  // ============ HUGE HEAD ============
-  const headCY=sy-30;
+  // ============ HUGE HEAD — RETRO ARCADE ============
+  const headCY=sy-24; // RETRO: moved up slightly due to shorter torso
 
-  // Neck (muscular, outlined)
+  // Neck (simple, outlined)
   oRect(sx-6,torsoTop-7,12,9,sk);
-  // Neck muscle highlight
-  ctx.fillStyle=skL;ctx.globalAlpha=0.15;
-  ctx.beginPath();ctx.ellipse(sx+2,torsoTop-3,3,4,0,0,Math.PI*2);ctx.fill();
-  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
 
-  // EARS (behind head for some, with outline)
+  // EARS (simple outline, no inner detail)
   const earS=lk.earSz;
   const earX=hw+2;
   oEllipse(sx-earX,headCY+2,5*earS,8*earS,sk);
   oEllipse(sx+earX,headCY+2,5*earS,8*earS,sk);
-  // Ear inner
-  ctx.fillStyle=skD;
-  ctx.beginPath();ctx.ellipse(sx-earX+1,headCY+2,3*earS,5*earS,0,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.ellipse(sx+earX-1,headCY+2,3*earS,5*earS,0,0,Math.PI*2);ctx.fill();
 
-  // HEAD — clean bold outlined ellipse
+  // HEAD — clean bold outlined ellipse (RETRO: no highlights)
   oEllipse(sx,headCY,hw,hh,sk);
 
-  // Forehead highlight
-  ctx.fillStyle=skL;ctx.globalAlpha=0.35;
-  ctx.beginPath();ctx.ellipse(sx-3,headCY-hh*0.35,hw*0.5,hh*0.3,0,0,Math.PI*2);ctx.fill();
-  ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
-
-  // Rim lighting — bright edge highlight on right side of head (arena side-light)
-  ctx.fillStyle='rgba(255,245,220,0.14)';
-  ctx.beginPath();ctx.ellipse(sx+hw*0.6,headCY,hw*0.35,hh*0.8,0,0,Math.PI*2);ctx.fill();
-
-  // ============ HAIR (the #1 visual identifier!) ============
+  // ============ HAIR (RETRO ARCADE - SIMPLIFIED) ============
   const hC=lk.hairC;
-  const hCD='#'+[0,2,4].map(i=>Math.max(0,parseInt(hC.slice(1+i,3+i),16)-40).toString(16).padStart(2,'0')).join('');
 
   if(p.stats.hair==='bald'){
-    // JORDAN — gleaming bald dome
-    ctx.fillStyle='rgba(255,255,255,0.3)';
-    ctx.beginPath();ctx.ellipse(sx-4,headCY-hh*0.45,hw*0.35,hh*0.2,0.3,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='rgba(255,255,255,0.15)';
-    ctx.beginPath();ctx.ellipse(sx+6,headCY-hh*0.55,hw*0.18,hh*0.12,-0.3,0,Math.PI*2);ctx.fill();
+    // JORDAN — simple bald (no shine)
   }else if(p.stats.hair==='short'){
-    // Short hair cap (with outline!)
+    // Short hair cap (simple, with outline!)
     ctx.fillStyle='#000';
     ctx.beginPath();
     ctx.ellipse(sx,headCY-hh*0.15,hw+OL+1,hh*0.7+OL+1,0,Math.PI,Math.PI*2);ctx.fill();
     ctx.fillStyle=hC;
     ctx.beginPath();
     ctx.ellipse(sx,headCY-hh*0.15,hw+1,hh*0.7,0,Math.PI,Math.PI*2);ctx.fill();
-    // Hairline edge
-    ctx.fillStyle=hCD;
-    ctx.beginPath();
-    ctx.ellipse(sx,headCY-hh*0.08,hw-2,hh*0.12,0,Math.PI,Math.PI*2);ctx.fill();
-    // Doncic gets shaggy/messy texture
-    if(pid==='doncic'){
-      ctx.fillStyle=hC;
-      for(let i=-3;i<=3;i++){
-        ctx.beginPath();ctx.ellipse(sx+i*5,headCY-hh+2+Math.abs(i)*2,4,6+Math.random()*2,i*0.15,0,Math.PI*2);ctx.fill();
-      }
-    }
-    // Tatum gets flat-top fade
-    if(pid==='tatum'){
-      ctx.fillStyle=hC;ctx.fillRect(sx-hw*0.7,headCY-hh-3,hw*1.4,6); // flat top
-      ctx.fillStyle='#000';ctx.fillRect(sx-hw*0.7-OL,headCY-hh-3-OL,hw*1.4+OL*2,OL); // outline top
-      // Fade lines on sides
-      ctx.strokeStyle=skD;ctx.lineWidth=1;ctx.globalAlpha=0.3;
-      for(let i=0;i<4;i++){
-        const fy=headCY-hh*0.2+i*3;
-        ctx.beginPath();ctx.moveTo(sx-hw+2,fy);ctx.lineTo(sx-hw+8,fy);ctx.stroke();
-        ctx.beginPath();ctx.moveTo(sx+hw-2,fy);ctx.lineTo(sx+hw-8,fy);ctx.stroke();
-      }
-      ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
-    }
   }else if(p.stats.hair==='headband'){
     // Hair above headband
     ctx.fillStyle='#000';
@@ -1937,10 +1883,9 @@ function drawPlayer(p){
     ctx.fillStyle=hC;
     ctx.beginPath();ctx.ellipse(sx,headCY-hh*0.25,hw+1,hh*0.65,0,Math.PI,Math.PI*2);ctx.fill();
 
-    // BUTLER — WILD EMO HAIR (THE signature look!)
+    // BUTLER — simplified spiky hair
     if(pid==='butler'){
       ctx.fillStyle=hC;ctx.strokeStyle='#000';ctx.lineWidth=2;
-      // Giant wild spiky strands shooting everywhere
       for(let i=-4;i<=4;i++){
         const bx=sx+i*5;const ang=-0.9+i*0.2;const len=22+Math.abs(i)*4;
         ctx.save();ctx.translate(bx,headCY-hh-1);ctx.rotate(ang);
@@ -1948,34 +1893,20 @@ function drawPlayer(p){
         ctx.strokeRect(-3,0,6,-len);
         ctx.restore();
       }
-      // Extra crazy long center ones
-      ctx.save();ctx.translate(sx-2,headCY-hh);ctx.rotate(-0.15);
-      ctx.fillRect(-4,0,8,-32);ctx.strokeRect(-4,0,8,-32);ctx.restore();
-      ctx.save();ctx.translate(sx+5,headCY-hh);ctx.rotate(0.2);
-      ctx.fillRect(-3,0,6,-28);ctx.strokeRect(-3,0,6,-28);ctx.restore();
     }
 
-    // LEBRON — receding hairline (visible forehead)
+    // LEBRON — simple receding hairline
     if(pid==='lebron'){
       ctx.fillStyle=sk;
       ctx.beginPath();ctx.ellipse(sx,headCY-hh+4,hw*0.55,hh*0.22,0,0,Math.PI*2);ctx.fill();
-      // Widow's peak
-      ctx.fillStyle=hC;
-      ctx.beginPath();ctx.moveTo(sx-4,headCY-hh+8);ctx.lineTo(sx,headCY-hh+2);ctx.lineTo(sx+4,headCY-hh+8);ctx.fill();
     }
 
-    // GIANNIS — very tall head with short hair peeking above headband
+    // GIANNIS — tufts above headband
     if(pid==='giannis'){
-      // Extra tufts above
       ctx.fillStyle=hC;
       for(let i=-2;i<=2;i++){
         ctx.beginPath();ctx.ellipse(sx+i*6,headCY-hh-2,5,4,0,0,Math.PI*2);ctx.fill();
       }
-    }
-
-    // STEWART — short hair above headband
-    if(pid==='stewart'){
-      // Neat short cap
     }
 
     // HEADBAND (bold, with outline!)
@@ -1984,13 +1915,6 @@ function drawPlayer(p){
     ctx.fillRect(sx-hw-4,hbY-1,hw*2+8,9);
     ctx.fillStyle=c1;
     ctx.fillRect(sx-hw-2,hbY+1,hw*2+4,6);
-    // Band detail
-    ctx.fillStyle=c2;ctx.fillRect(sx-hw,hbY+3,hw*2,2);
-    // Knot on side
-    ctx.fillStyle=c1;
-    ctx.beginPath();ctx.arc(sx-hw-3,hbY+4,5,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='#000';
-    ctx.beginPath();ctx.arc(sx-hw-3,hbY+4,5,0,Math.PI*2);ctx.stroke();
   }else if(p.stats.hair==='ponytail'){
     // Full hair top (outlined)
     ctx.fillStyle='#000';
@@ -2011,8 +1935,6 @@ function drawPlayer(p){
     ctx.quadraticCurveTo(sx-fDir*30,headCY-hh-5,sx-fDir*38,headCY);
     ctx.quadraticCurveTo(sx-fDir*42,headCY+15,sx-fDir*32,headCY+22);
     ctx.stroke();
-    // Hair tie
-    oEllipse(sx-fDir*8,headCY-hh*0.75,4,4,c1);
   }else if(p.stats.hair==='braids'){
     // Hair top
     ctx.fillStyle='#000';
@@ -2030,35 +1952,21 @@ function drawPlayer(p){
       ctx.beginPath();ctx.moveTo(bsx,bsy);
       ctx.quadraticCurveTo(bsx+b*2,bsy+18,bsx+b*3,bsy+30);ctx.stroke();
     }
-    // Beads / gold tips
-    const beadC=c2==='#000000'?'#FFD700':c2;
-    for(let b=-3;b<=3;b++){
-      oEllipse(sx+b*5.5+b*3,headCY+hh*0.3+30,3,3,beadC);
-    }
   }
 
-  // ============ FACE ============
+  // ============ FACE (RETRO ARCADE SIMPLE) ============
   const eyeCX=sx+fDir*6;
   const eyeCY=headCY-hh*0.05;
   const es=lk.eyeSz;
 
-  // EYES — big, bold, expressive (with black outlines!)
-  // Eye whites (outlined)
+  // EYES — simple white ovals with pupils (RETRO: no iris, no shine)
   oEllipse(eyeCX-8,eyeCY,8*es,6*es,'#FFF');
   oEllipse(eyeCX+8,eyeCY,8*es,6*es,'#FFF');
 
-  // Irises (big!)
-  ctx.fillStyle=lk.eyeC;
-  ctx.beginPath();ctx.arc(eyeCX-8+fDir*2,eyeCY+0.5,4.5*es,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(eyeCX+8+fDir*2,eyeCY+0.5,4.5*es,0,Math.PI*2);ctx.fill();
-  // Pupils
+  // Pupils only
   ctx.fillStyle='#000';
-  ctx.beginPath();ctx.arc(eyeCX-8+fDir*2.5,eyeCY+0.5,2.5*es,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(eyeCX+8+fDir*2.5,eyeCY+0.5,2.5*es,0,Math.PI*2);ctx.fill();
-  // Eye shine (makes them look alive)
-  ctx.fillStyle='#FFF';
-  ctx.beginPath();ctx.arc(eyeCX-8+fDir*1,eyeCY-2,2,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(eyeCX+8+fDir*1,eyeCY-2,2,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(eyeCX-8+fDir*2.5,eyeCY+0.5,3*es,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(eyeCX+8+fDir*2.5,eyeCY+0.5,3*es,0,Math.PI*2);ctx.fill();
 
   // Angry eyes when dunking/shoving/blocking/shooting peak
   if(p.dunking||p.shoving||p.blocking||p.stealing||(aType==='JUMP_SHOT'&&(aPhase==='HANG'||aPhase==='RELEASE'))){
@@ -2066,13 +1974,13 @@ function drawPlayer(p){
     ctx.beginPath();ctx.moveTo(eyeCX-8-6,eyeCY-8);ctx.lineTo(eyeCX-8+6,eyeCY-11);ctx.stroke();
     ctx.beginPath();ctx.moveTo(eyeCX+8-6,eyeCY-11);ctx.lineTo(eyeCX+8+6,eyeCY-8);ctx.stroke();
   }else{
-    // Normal eyebrows
-    ctx.strokeStyle=lk.hairC;ctx.lineWidth=2.5;ctx.lineCap='round';
+    // Normal eyebrows (thicker for RETRO)
+    ctx.strokeStyle=lk.hairC;ctx.lineWidth=4;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(eyeCX-8-5,eyeCY-8);ctx.lineTo(eyeCX-8+5,eyeCY-9);ctx.stroke();
     ctx.beginPath();ctx.moveTo(eyeCX+8-5,eyeCY-9);ctx.lineTo(eyeCX+8+5,eyeCY-8);ctx.stroke();
   }
 
-  // NOSE (simple, bold)
+  // NOSE (simple triangle, no nostrils)
   const nw=lk.noseW;
   ctx.fillStyle=skD;
   ctx.beginPath();
@@ -2080,40 +1988,20 @@ function drawPlayer(p){
   ctx.lineTo(sx+fDir*4-4*nw,headCY+hh*0.25);
   ctx.lineTo(sx+fDir*4+4*nw,headCY+hh*0.25);
   ctx.closePath();ctx.fill();
-  // Nostrils
-  if(nw>0.9){
-    ctx.fillStyle=skD;
-    ctx.beginPath();ctx.arc(sx+fDir*4-3*nw,headCY+hh*0.24,1.8,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(sx+fDir*4+3*nw,headCY+hh*0.24,1.8,0,Math.PI*2);ctx.fill();
-  }
 
-  // MOUTH (expressive!)
+  // MOUTH (simple: open black circle when active, line when neutral)
   const mY=headCY+hh*0.42;
   if(p.dunking||p.onFire||p.shoving||p.blocking||p.stealing||(aType==='JUMP_SHOT'&&aPhase==='HANG')){
-    // SCREAMING — wide open mouth
+    // SCREAMING — open mouth (black circle)
     ctx.fillStyle='#000';
     ctx.beginPath();ctx.ellipse(sx+fDir*4,mY,9,7,0,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='#CC2222';
-    ctx.beginPath();ctx.ellipse(sx+fDir*4,mY+2,6,4,0,0,Math.PI);ctx.fill();
-    // Teeth
-    ctx.fillStyle='#FFF';
-    ctx.fillRect(sx+fDir*4-6,mY-4,12,3);
-  }else if(moving){
+  }else if(!moving){
+    // Simple mouth line when neutral
     ctx.strokeStyle=skD;ctx.lineWidth=2;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(sx+fDir*2-5,mY);ctx.lineTo(sx+fDir*2+5,mY-1);ctx.stroke();
-  }else{
-    // Neutral / smile
-    if(pid==='plum'){
-      // Big friendly smile
-      ctx.strokeStyle=skD;ctx.lineWidth=2.5;ctx.lineCap='round';
-      ctx.beginPath();ctx.arc(sx+fDir*3,mY-3,7,0.2,Math.PI-0.2);ctx.stroke();
-    }else{
-      ctx.strokeStyle=skD;ctx.lineWidth=2;ctx.lineCap='round';
-      ctx.beginPath();ctx.arc(sx+fDir*3,mY-2,5,0.15,Math.PI-0.15);ctx.stroke();
-    }
   }
 
-  // ============ FACIAL HAIR (bold, visible!) ============
+  // ============ FACIAL HAIR (simple!) ============
   if(lk.beard==='mustache'){
     // JORDAN thick mustache
     ctx.fillStyle=lk.beardC;
@@ -2133,11 +2021,8 @@ function drawPlayer(p){
     ctx.beginPath();ctx.ellipse(sx+fDir*3,mY+8,5,8,0,0,Math.PI*2);ctx.fill();
     ctx.strokeStyle='#000';ctx.lineWidth=1.5;
     ctx.beginPath();ctx.ellipse(sx+fDir*3,mY+8,5,8,0,0,Math.PI*2);ctx.stroke();
-    // Mustache part
-    ctx.fillStyle=lk.beardC;
-    ctx.beginPath();ctx.ellipse(sx+fDir*3,mY-3,7,3,0,0,Math.PI*2);ctx.fill();
   }else if(lk.beard==='full'){
-    // MASSIVE BEARD (LeBron/Butler) — the signature look
+    // MASSIVE BEARD (LeBron/Butler) — simple solid fill
     ctx.fillStyle=lk.beardC;
     ctx.beginPath();
     ctx.moveTo(sx-hw*0.7,headCY+hh*0.15);
@@ -2151,13 +2036,6 @@ function drawPlayer(p){
     ctx.quadraticCurveTo(sx-hw*0.75,headCY+hh*0.7,sx,headCY+hh*0.95);
     ctx.quadraticCurveTo(sx+hw*0.75,headCY+hh*0.7,sx+hw*0.7,headCY+hh*0.15);
     ctx.stroke();
-    // Texture lines
-    ctx.strokeStyle='#000';ctx.lineWidth=0.8;ctx.globalAlpha=0.3;
-    for(let i=-2;i<=2;i++){
-      ctx.beginPath();ctx.moveTo(sx+i*5,headCY+hh*0.35);
-      ctx.lineTo(sx+i*4,headCY+hh*0.85);ctx.stroke();
-    }
-    ctx.globalAlpha=p.flashTimer>0&&p.flashTimer%4<2?0.5:1;
   }
 
   // ============ CURRY MOUTHGUARD ============
@@ -2189,7 +2067,17 @@ function drawPlayer(p){
     ctx.restore();
   }
 
-  // ============ PLAYER INDICATOR ============
+  // === PIXELATION BLIT-BACK ===
+  ctx.restore();
+  ctx=mainCtx; // RESTORE main context
+  ctx.save();
+  const savedSmoothing=ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(pixCanvas, sx-sprW/2, sy-sprH*0.65, sprW, sprH);
+  ctx.imageSmoothingEnabled=savedSmoothing;
+  ctx.restore();
+
+  // ============ PLAYER INDICATOR (on main canvas) ============
   if(p.controlled&&p.isP1){
     const arrowY=headCY-hh-20;
     const bob=Math.sin(titleTimer*0.12)*3;
@@ -2201,7 +2089,7 @@ function drawPlayer(p){
     ctx.beginPath();ctx.ellipse(p.x,p.y+18,20,7,0,0,Math.PI*2);ctx.stroke();
   }
 
-  // ============ NAME TAG ============
+  // ============ NAME TAG (on main canvas) ============
   ctx.font='bold 10px Arial';ctx.textAlign='center';
   ctx.strokeStyle='#000';ctx.lineWidth=4;ctx.strokeText(p.stats.name,sx,p.y+36);
   ctx.fillStyle='#FFF';ctx.fillText(p.stats.name,sx,p.y+36);
@@ -2898,6 +2786,13 @@ function gameLoop(){
     ctx.fillRect(0,0,W,H);
     ctx.restore();
   }
+
+  // CRT scanline overlay (RETRO arcade effect)
+  ctx.fillStyle='rgba(0,0,0,0.06)';
+  for(let y=0;y<H;y+=3){ctx.fillRect(0,y,W,1);}
+  // Warm CRT tint
+  ctx.fillStyle='rgba(255,200,140,0.02)';
+  ctx.fillRect(0,0,W,H);
 
   requestAnimationFrame(gameLoop);
 }
