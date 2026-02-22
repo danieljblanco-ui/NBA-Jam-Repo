@@ -69,85 +69,85 @@ function sfxBlock(){playTone(90,0.4,'sawtooth',0.3);setTimeout(()=>playTone(60,0
 // everything else is about BIG visible features you can read across the court.
 const PLAYER_LOOKS={
   'M. JORDAN':{skin:'#6B4226',skinD:'#4D2E18',skinL:'#8B5A38',
-    headW:1.0,headH:0.92,earSz:1.5,eyeSz:1.0,
-    noseW:1.3,beard:'mustache',beardC:'#1A1A1A',
-    hairC:'#1A1A1A',eyeC:'#2A1800',
-    id:'jordan'}, // bald + big ears + thick stache
+    headW:1.02,headH:0.94,earSz:1.6,eyeSz:0.95,
+    noseW:1.35,beard:'goatee',beardC:'#1A1A1A',
+    hairC:'#1A1A1A',eyeC:'#2A1800',earring:true,
+    id:'jordan'}, // BALD + big ears + goatee + gold earring + angular jaw
   'C. CLARK':{skin:'#F2C9A3',skinD:'#D4A882',skinL:'#FFE0C4',
-    headW:0.88,headH:1.0,earSz:0.7,eyeSz:1.25,
+    headW:0.88,headH:0.98,earSz:0.7,eyeSz:1.2,
     noseW:0.7,beard:'none',beardC:'',
-    hairC:'#3A2210',eyeC:'#5A7A42',
-    id:'clark'}, // ponytail + big eyes + glasses
+    hairC:'#3A2210',eyeC:'#7A6530',
+    id:'clark'}, // dark brown ponytail + hazel eyes + oval face
   'L. JAMES':{skin:'#6B4226',skinD:'#4D2E18',skinL:'#8B5A38',
-    headW:1.12,headH:0.88,earSz:1.0,eyeSz:0.95,
-    noseW:1.4,beard:'full',beardC:'#1A1A1A',
+    headW:1.15,headH:0.88,earSz:1.0,eyeSz:1.05,
+    noseW:1.45,beard:'full',beardC:'#1A1A1A',
     hairC:'#1A1A1A',eyeC:'#2A1800',
-    id:'lebron'}, // headband + massive beard + wide jaw
-  'C. PARKER':{skin:'#7B5233',skinD:'#5C3A20',skinL:'#9B7050',
+    id:'lebron'}, // headband + MASSIVE beard + wide jaw + receding hairline + big nose
+  'C. PARKER':{skin:'#6B4226',skinD:'#4D2E18',skinL:'#8B5A38',
     headW:0.9,headH:1.0,earSz:0.8,eyeSz:1.1,
-    noseW:0.9,beard:'none',beardC:'',
+    noseW:0.95,beard:'none',beardC:'',
     hairC:'#1A1A1A',eyeC:'#3A2200',
-    id:'parker'}, // braids + elegant
+    id:'parker'}, // braids + elegant diamond face + tall
   'S. CURRY':{skin:'#C49A6C',skinD:'#A07A50',skinL:'#E0BB90',
-    headW:0.95,headH:0.95,earSz:0.9,eyeSz:1.15,
-    noseW:0.85,beard:'goatee',beardC:'#1A1A1A',
-    hairC:'#1A1A1A',eyeC:'#3A2200',
-    id:'curry'}, // baby face + goatee + mouthguard
-  'S. IONESCU':{skin:'#E8C9A0',skinD:'#C9A880',skinL:'#FFF0D8',
-    headW:0.85,headH:1.02,earSz:0.7,eyeSz:1.3,
-    noseW:0.65,beard:'none',beardC:'',
-    hairC:'#2A1A08',eyeC:'#4A6A32',
-    id:'ionescu'}, // ponytail + huge eyes
+    headW:0.95,headH:0.95,earSz:0.85,eyeSz:1.2,
+    noseW:0.85,beard:'scruff',beardC:'#2A1A0A',
+    hairC:'#1A1A1A',eyeC:'#3A8A2A',mouthguard:true,
+    id:'curry'}, // GREEN EYES + baby face + light stubble + mouthguard
+  'S. IONESCU':{skin:'#E0C098',skinD:'#C0A078',skinL:'#FFF0D8',
+    headW:0.87,headH:1.0,earSz:0.7,eyeSz:1.25,
+    noseW:0.68,beard:'none',beardC:'',
+    hairC:'#6A4A28',eyeC:'#6A5530',
+    id:'ionescu'}, // light brown ponytail + big eyes + oval face
   'K. DURANT':{skin:'#5A3818',skinD:'#3D260E',skinL:'#7A5432',
-    headW:0.82,headH:1.25,earSz:0.9,eyeSz:0.9,
-    noseW:1.1,beard:'goatee',beardC:'#1A1A1A',
+    headW:0.78,headH:1.3,earSz:0.9,eyeSz:0.88,
+    noseW:1.15,beard:'goatee',beardC:'#1A1A1A',
     hairC:'#1A1A1A',eyeC:'#2A1800',
-    id:'durant'}, // TALL narrow head + slim goatee
-  'D. TAURASI':{skin:'#E8C098',skinD:'#C9A078',skinL:'#FFE0C0',
-    headW:0.95,headH:0.92,earSz:0.8,eyeSz:1.0,
-    noseW:0.85,beard:'none',beardC:'',
-    hairC:'#D4A040',eyeC:'#6A8A52',
-    id:'taurasi'}, // blonde ponytail + fierce brows
+    id:'durant'}, // VERY tall + long narrow face + slim goatee + deep-set eyes
+  'D. TAURASI':{skin:'#E0C098',skinD:'#C0A078',skinL:'#FFF0C8',
+    headW:0.95,headH:0.94,earSz:0.8,eyeSz:1.0,
+    noseW:0.88,beard:'none',beardC:'',
+    hairC:'#1A1A1A',eyeC:'#3A2800',
+    id:'taurasi'}, // dark hair ponytail + fierce intense brows + sharp features
   'G. ANTETOKOUNMPO':{skin:'#3D2610',skinD:'#2A1808',skinL:'#5A3C22',
-    headW:0.85,headH:1.35,earSz:1.1,eyeSz:1.0,
-    noseW:1.3,beard:'none',beardC:'',
+    headW:0.88,headH:1.3,earSz:1.15,eyeSz:1.0,
+    noseW:1.35,beard:'scruff',beardC:'#1A1A1A',
     hairC:'#1A1A1A',eyeC:'#2A1800',
-    id:'giannis'}, // SUPER tall head + headband
+    id:'giannis'}, // SUPER tall head + big ears + headband + intense + sponge twists
   "A'JA WILSON":{skin:'#5A3818',skinD:'#3D260E',skinL:'#7A5432',
     headW:0.92,headH:1.02,earSz:0.8,eyeSz:1.1,
-    noseW:1.0,beard:'none',beardC:'',
+    noseW:1.05,beard:'none',beardC:'',
     hairC:'#1A1A1A',eyeC:'#2A1800',
-    id:'wilson'}, // braids + strong build
-  'L. DONCIC':{skin:'#F0C8A0',skinD:'#D0A880',skinL:'#FFE8CC',
-    headW:1.1,headH:0.88,earSz:0.95,eyeSz:1.0,
-    noseW:1.0,beard:'none',beardC:'',
-    hairC:'#5A4030',eyeC:'#6A8A6A',
-    id:'doncic'}, // round chubby face + shaggy hair
+    id:'wilson'}, // elaborate cornrow braids + tall + strong + confident
+  'L. DONCIC':{skin:'#ECC8A0',skinD:'#CCB088',skinL:'#FFE8CC',
+    headW:1.12,headH:0.86,earSz:0.95,eyeSz:1.0,
+    noseW:1.05,beard:'scruff',beardC:'#5A4030',
+    hairC:'#7A5A38',eyeC:'#6A7A5A',
+    id:'doncic'}, // ROUND chubby face + light brown side-swept hair + scruff stubble
   'A. OGWUMIKE':{skin:'#5A3818',skinD:'#3D260E',skinL:'#7A5432',
     headW:0.9,headH:1.0,earSz:0.75,eyeSz:1.15,
     noseW:1.0,beard:'none',beardC:'',
     hairC:'#1A1A1A',eyeC:'#2A1800',
-    id:'ogwumike'}, // braids + beads
+    id:'ogwumike'}, // braids with beads + sharp features + tall
   'J. TATUM':{skin:'#7B5233',skinD:'#5C3A20',skinL:'#9B7050',
-    headW:1.0,headH:0.95,earSz:0.95,eyeSz:1.0,
-    noseW:1.1,beard:'goatee',beardC:'#1A1A1A',
+    headW:1.0,headH:0.98,earSz:0.95,eyeSz:1.0,
+    noseW:1.15,beard:'full',beardC:'#1A1A1A',
     hairC:'#1A1A1A',eyeC:'#2A1800',
-    id:'tatum'}, // flat-top fade + goatee
-  'B. STEWART':{skin:'#6B4226',skinD:'#4D2E18',skinL:'#8B5A38',
-    headW:0.9,headH:1.0,earSz:0.8,eyeSz:1.1,
-    noseW:1.0,beard:'none',beardC:'',
-    hairC:'#1A1A1A',eyeC:'#3A2200',
-    id:'stewart'}, // short hair + headband
-  'J. BUTLER':{skin:'#5A3818',skinD:'#3D260E',skinL:'#7A5432',
+    id:'tatum'}, // braids + FULL thick beard + strong jawline
+  'B. STEWART':{skin:'#D4A882',skinD:'#B48860',skinL:'#F0C8A8',
+    headW:0.9,headH:1.02,earSz:0.8,eyeSz:1.05,
+    noseW:0.9,beard:'none',beardC:'',
+    hairC:'#2A1A0A',eyeC:'#3A2800',
+    id:'stewart'}, // dark hair + medium skin + very tall + long arms
+  'J. BUTLER':{skin:'#7B5233',skinD:'#5C3A20',skinL:'#9B7050',
     headW:1.0,headH:1.0,earSz:0.9,eyeSz:0.95,
-    noseW:1.2,beard:'full',beardC:'#1A1A1A',
-    hairC:'#1A1A1A',eyeC:'#2A1800',
-    id:'butler'}, // WILD emo hair + beard + headband
+    noseW:1.15,beard:'none',beardC:'',
+    hairC:'#0A0A0A',eyeC:'#2A1800',
+    id:'butler'}, // WILD emo straightened hair + side-swept bangs + headband + no beard
   'K. PLUM':{skin:'#F5D0A8',skinD:'#D5B088',skinL:'#FFF0D0',
-    headW:0.85,headH:0.95,earSz:0.7,eyeSz:1.25,
+    headW:0.87,headH:0.95,earSz:0.7,eyeSz:1.2,
     noseW:0.65,beard:'none',beardC:'',
     hairC:'#C89040',eyeC:'#5A7A42',
-    id:'plum'}, // blonde ponytail + big smile
+    id:'plum'}, // blonde ponytail + fair skin + big eyes + heart-shaped face
 };
 
 // --- Teams: NBA + WNBA Mix ---
@@ -170,12 +170,12 @@ const TEAMS=[
   {name:'PHOENIX',abbr:'PHX',color1:'#E56020',color2:'#1D1160',
     players:[
       {name:'K. DURANT',spd:8,threePt:9,dunk:9,def:6,hair:'short',num:35,ht:1.08},
-      {name:'D. TAURASI',spd:7,threePt:10,dunk:3,def:6,hair:'ponytail',num:3,ht:0.87}
+      {name:'D. TAURASI',spd:7,threePt:10,dunk:3,def:6,hair:'short',num:3,ht:0.87}
     ]},
   {name:'MILWAUKEE',abbr:'MIL',color1:'#00471B',color2:'#EEE1C6',
     players:[
       {name:'G. ANTETOKOUNMPO',spd:9,threePt:6,dunk:10,def:9,hair:'short',num:34,ht:1.1},
-      {name:"A'JA WILSON",spd:8,threePt:7,dunk:8,def:9,hair:'ponytail',num:22,ht:0.95}
+      {name:"A'JA WILSON",spd:8,threePt:7,dunk:8,def:9,hair:'braids',num:22,ht:0.95}
     ]},
   {name:'DALLAS',abbr:'DAL',color1:'#00538C',color2:'#B8C4CA',
     players:[
@@ -184,7 +184,7 @@ const TEAMS=[
     ]},
   {name:'BOSTON',abbr:'BOS',color1:'#007A33',color2:'#BA9653',
     players:[
-      {name:'J. TATUM',spd:8,threePt:8,dunk:9,def:7,hair:'short',num:0,ht:1.02},
+      {name:'J. TATUM',spd:8,threePt:8,dunk:9,def:7,hair:'braids',num:0,ht:1.02},
       {name:'B. STEWART',spd:7,threePt:8,dunk:7,def:9,hair:'ponytail',num:30,ht:0.95}
     ]},
   {name:'MIAMI',abbr:'MIA',color1:'#98002E',color2:'#F9A01B',
@@ -1867,15 +1867,27 @@ function drawPlayer(p){
   const hC=lk.hairC;
 
   if(p.stats.hair==='bald'){
-    // JORDAN — simple bald (no shine)
+    // JORDAN — bald head with slight shine
+    ctx.fillStyle=skL;ctx.globalAlpha=0.3;
+    ctx.beginPath();ctx.ellipse(sx+fDir*2,headCY-hh*0.3,hw*0.4,hh*0.3,0,0,Math.PI*2);ctx.fill();
+    ctx.globalAlpha=1;
   }else if(p.stats.hair==='short'){
-    // Short hair cap (simple, with outline!)
+    // Short hair cap (with outline)
     ctx.fillStyle='#000';
     ctx.beginPath();
     ctx.ellipse(sx,headCY-hh*0.15,hw+OL+1,hh*0.7+OL+1,0,Math.PI,Math.PI*2);ctx.fill();
     ctx.fillStyle=hC;
     ctx.beginPath();
     ctx.ellipse(sx,headCY-hh*0.15,hw+1,hh*0.7,0,Math.PI,Math.PI*2);ctx.fill();
+    // DONCIC — thick side-swept hair flopping over
+    if(pid==='doncic'){
+      ctx.fillStyle=hC;ctx.strokeStyle='#000';ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.moveTo(sx-hw*0.3,headCY-hh-2);
+      ctx.quadraticCurveTo(sx+fDir*hw*0.8,headCY-hh-10,sx+fDir*(hw+12),headCY-hh*0.3);
+      ctx.quadraticCurveTo(sx+fDir*(hw+8),headCY-hh*0.5,sx-hw*0.1,headCY-hh+2);
+      ctx.closePath();ctx.fill();ctx.stroke();
+    }
   }else if(p.stats.hair==='headband'){
     // Hair above headband
     ctx.fillStyle='#000';
@@ -1883,16 +1895,26 @@ function drawPlayer(p){
     ctx.fillStyle=hC;
     ctx.beginPath();ctx.ellipse(sx,headCY-hh*0.25,hw+1,hh*0.65,0,Math.PI,Math.PI*2);ctx.fill();
 
-    // BUTLER — simplified spiky hair
+    // BUTLER — emo straightened hair with side-swept bangs
     if(pid==='butler'){
       ctx.fillStyle=hC;ctx.strokeStyle='#000';ctx.lineWidth=2;
-      for(let i=-4;i<=4;i++){
-        const bx=sx+i*5;const ang=-0.9+i*0.2;const len=22+Math.abs(i)*4;
+      // Long straightened strands sweeping to one side
+      for(let i=-3;i<=4;i++){
+        const bx=sx+i*5;const ang=-0.6+i*0.25;const len=25+i*4;
         ctx.save();ctx.translate(bx,headCY-hh-1);ctx.rotate(ang);
         ctx.fillRect(-3,0,6,-len);
         ctx.strokeRect(-3,0,6,-len);
         ctx.restore();
       }
+      // Side-swept bangs covering one eye
+      ctx.fillStyle=hC;
+      ctx.beginPath();
+      ctx.moveTo(sx-hw*0.5,headCY-hh);
+      ctx.quadraticCurveTo(sx+fDir*hw*0.6,headCY-hh*0.3,sx+fDir*(hw+8),eyeCY+5);
+      ctx.lineTo(sx+fDir*(hw+2),eyeCY-5);
+      ctx.quadraticCurveTo(sx+fDir*hw*0.3,headCY-hh*0.6,sx-hw*0.3,headCY-hh+2);
+      ctx.closePath();ctx.fill();
+      ctx.strokeStyle='#000';ctx.lineWidth=2;ctx.stroke();
     }
 
     // LEBRON — simple receding hairline
@@ -1901,11 +1923,19 @@ function drawPlayer(p){
       ctx.beginPath();ctx.ellipse(sx,headCY-hh+4,hw*0.55,hh*0.22,0,0,Math.PI*2);ctx.fill();
     }
 
-    // GIANNIS — tufts above headband
+    // GIANNIS — sponge twists above headband (signature look)
     if(pid==='giannis'){
       ctx.fillStyle=hC;
-      for(let i=-2;i<=2;i++){
-        ctx.beginPath();ctx.ellipse(sx+i*6,headCY-hh-2,5,4,0,0,Math.PI*2);ctx.fill();
+      for(let i=-3;i<=3;i++){
+        const tx=sx+i*5;
+        const ty=headCY-hh-1;
+        // Twisted spikes sticking up
+        ctx.beginPath();
+        ctx.moveTo(tx-2,ty+4);
+        ctx.lineTo(tx+1,ty-8-Math.abs(i)*2);
+        ctx.lineTo(tx+3,ty+4);
+        ctx.closePath();ctx.fill();
+        ctx.strokeStyle='#000';ctx.lineWidth=1.5;ctx.stroke();
       }
     }
 
@@ -2115,33 +2145,60 @@ function drawPlayer(p){
     ctx.quadraticCurveTo(sx+fDir*4,mY-8,sx+fDir*4+10,mY-3);
     ctx.stroke();
   }else if(lk.beard==='goatee'){
-    // Slim goatee
+    // Slim goatee (Jordan, Durant)
     ctx.fillStyle=lk.beardC;
-    ctx.beginPath();ctx.ellipse(sx+fDir*3,mY+8,5,8,0,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle='#000';ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.ellipse(sx+fDir*3,mY+8,5,8,0,0,Math.PI*2);ctx.stroke();
+    ctx.beginPath();ctx.ellipse(sx+fDir*3,mY+8,6,9,0,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#000';ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(sx+fDir*3,mY+8,6,9,0,0,Math.PI*2);ctx.stroke();
   }else if(lk.beard==='full'){
-    // MASSIVE BEARD (LeBron/Butler) — simple solid fill
+    // MASSIVE BEARD (LeBron, Tatum)
     ctx.fillStyle=lk.beardC;
     ctx.beginPath();
     ctx.moveTo(sx-hw*0.7,headCY+hh*0.15);
     ctx.quadraticCurveTo(sx-hw*0.75,headCY+hh*0.7,sx,headCY+hh*0.95);
     ctx.quadraticCurveTo(sx+hw*0.75,headCY+hh*0.7,sx+hw*0.7,headCY+hh*0.15);
     ctx.fill();
-    // Beard outline
     ctx.strokeStyle='#000';ctx.lineWidth=2;
     ctx.beginPath();
     ctx.moveTo(sx-hw*0.7,headCY+hh*0.15);
     ctx.quadraticCurveTo(sx-hw*0.75,headCY+hh*0.7,sx,headCY+hh*0.95);
     ctx.quadraticCurveTo(sx+hw*0.75,headCY+hh*0.7,sx+hw*0.7,headCY+hh*0.15);
     ctx.stroke();
+  }else if(lk.beard==='scruff'){
+    // Light stubble/scruff (Curry, Doncic, Giannis)
+    ctx.fillStyle=lk.beardC||'#1A1A1A';
+    ctx.globalAlpha=0.35;
+    ctx.beginPath();
+    ctx.moveTo(sx-hw*0.55,headCY+hh*0.2);
+    ctx.quadraticCurveTo(sx-hw*0.6,headCY+hh*0.55,sx,headCY+hh*0.7);
+    ctx.quadraticCurveTo(sx+hw*0.6,headCY+hh*0.55,sx+hw*0.55,headCY+hh*0.2);
+    ctx.fill();
+    ctx.globalAlpha=1;
+    // Stubble dots for texture
+    ctx.fillStyle=lk.beardC||'#1A1A1A';
+    for(let dy=0;dy<4;dy++){
+      for(let dx=-3;dx<=3;dx++){
+        if(Math.abs(dx)+dy>5)continue;
+        ctx.globalAlpha=0.25+Math.random()*0.15;
+        ctx.fillRect(sx+fDir*2+dx*4,mY+dy*4-2,2,2);
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+
+  // ============ JORDAN GOLD EARRING ============
+  if(lk.earring){
+    const earX=hw+2;
+    ctx.fillStyle='#FFD700';
+    ctx.strokeStyle='#AA8800';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.arc(sx-earX-1,headCY+6,3.5,0,Math.PI*2);ctx.fill();ctx.stroke();
   }
 
   // ============ CURRY MOUTHGUARD ============
-  if(pid==='curry'){
+  if(lk.mouthguard){
     ctx.fillStyle='#00CCFF';
-    ctx.strokeStyle='#000';ctx.lineWidth=1.5;
-    ctx.beginPath();ctx.ellipse(sx+fDir*6,mY+3,4,3,fDir*0.3,0,Math.PI*2);ctx.fill();ctx.stroke();
+    ctx.strokeStyle='#000';ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(sx+fDir*6,mY+4,5,3.5,fDir*0.3,0,Math.PI*2);ctx.fill();ctx.stroke();
   }
 
   // ============ ON FIRE EFFECT (DRAMATIC AURA) ============
